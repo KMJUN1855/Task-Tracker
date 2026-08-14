@@ -197,6 +197,83 @@ check(
   progressList.data.every((t) => t.id !== task.id),
 );
 
+/* ------------------------------------------- fields the browser relies on */
+
+// A task with one closed session and one open one: closed_seconds must cover
+// only the closed interval, and the pair must reproduce elapsed_seconds - that
+// is exactly the arithmetic the browser repeats every second.
+const mixed = await api('POST', '/api/tasks', { name: 'Closed plus open' });
+await api('POST', '/api/sessions', {
+  task_id: mixed.data.id,
+  start_time: iso(-1800),
+  end_time: iso(-900),
+});
+await api('POST', `/api/tasks/${mixed.data.id}/start`);
+const running = await api('GET', `/api/tasks/${mixed.data.id}`);
+check(
+  'closed_seconds counts only the closed sessions',
+  running.data.closed_seconds === 900,
+  `got ${running.data.closed_seconds}`,
+);
+check(
+  'closed_seconds + open session reproduces elapsed_seconds',
+  typeof running.data.open_session_start === 'string' &&
+    Math.abs(
+      running.data.closed_seconds +
+        (Date.now() - new Date(running.data.open_session_start).getTime()) / 1000 -
+        running.data.elapsed_seconds,
+    ) < 3,
+);
+await api('DELETE', `/api/tasks/${mixed.data.id}`);
+
+/* ------------------------------------------------ every sort is reversible */
+
+// Distinct values on every sort key: a stable sort keeps tied rows in place,
+// so ties would legitimately fail the mirror check below.
+const early = await api('POST', '/api/tasks', {
+  name: 'Small overage',
+  max_time: 600,
+  due_date: iso(-3000),
+});
+await api('POST', '/api/sessions', {
+  task_id: early.data.id,
+  start_time: iso(-1200),
+  end_time: iso(-500),
+});
+await api('POST', `/api/tasks/${early.data.id}/finish`, {});
+
+const late = await api('POST', '/api/tasks', {
+  name: 'Big overage',
+  max_time: 600,
+  due_date: iso(-6000),
+});
+await api('POST', '/api/sessions', {
+  task_id: late.data.id,
+  start_time: iso(-9000),
+  end_time: iso(-500),
+});
+await api('POST', `/api/tasks/${late.data.id}/finish`, {});
+
+for (const sort of ['finished_at', 'due_date', 'started_at', 'overtime_max', 'overtime_due']) {
+  const asc = await api('GET', `/api/tasks?status=finished&sort=${sort}&order=asc`);
+  const desc = await api('GET', `/api/tasks?status=finished&sort=${sort}&order=desc`);
+  check(
+    `sort "${sort}" reverses cleanly`,
+    asc.data.length === desc.data.length &&
+      asc.data.every((t, i) => t.id === desc.data[desc.data.length - 1 - i].id),
+  );
+}
+
+const byOverage = await api('GET', '/api/tasks?status=finished&sort=overtime_max&order=desc');
+check(
+  'overtime_max desc puts the largest overage first',
+  byOverage.data[0].name === 'Big overage',
+  `got ${byOverage.data[0].name}`,
+);
+
+await api('DELETE', `/api/tasks/${early.data.id}`);
+await api('DELETE', `/api/tasks/${late.data.id}`);
+
 const reopened = await api('POST', `/api/tasks/${task.id}/reopen`);
 check('reopen returns to paused', reopened.data.status === 'paused' && reopened.data.finished_at === null);
 await api('POST', `/api/tasks/${task.id}/finish`, { finish_note: 'Done.' });

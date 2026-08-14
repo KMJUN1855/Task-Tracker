@@ -2,44 +2,55 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#14161a" />
     <title>Task Tracker</title>
-    <style>
-      body {
-        font-family: system-ui, sans-serif;
-        margin: 0;
-        padding: 2rem 1.25rem;
-        background: #14161a;
-        color: #e7e9ee;
-      }
-      main { max-width: 34rem; margin: 0 auto; }
-      code { background: #22252c; padding: 0.1em 0.4em; border-radius: 4px; }
-      li { margin: 0.35rem 0; }
-      #status { font-weight: 600; }
-    </style>
+    <link rel="stylesheet" href="/css/app.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>⏱</text></svg>"
+    />
   </head>
   <body>
-    <main>
-      <h1>Task Tracker</h1>
-      <p>API is up — the UI lands in step 2.</p>
-      <p>Server status: <span id="status">checking…</span></p>
-      <ul>
-        <li><code>GET /api/health</code></li>
-        <li><code>GET /api/categories</code></li>
-        <li><code>GET /api/tasks?status=upcoming&amp;sort=due_date&amp;pin_overdue=1</code></li>
-        <li><code>GET /api/sessions?task_id=1</code></li>
-        <li><code>GET /api/stats/daily?from=2026-08-01&amp;to=2026-08-14&amp;tz=Asia/Seoul</code></li>
-      </ul>
-    </main>
-    <script>
-      fetch('/api/health')
-        .then((r) => r.json())
-        .then((d) => {
-          document.getElementById('status').textContent = `ok — db: ${d.db}`;
-        })
-        .catch(() => {
-          document.getElementById('status').textContent = 'unreachable';
-        });
-    </script>
+    <!-- Header and tabs stick together as one block, so neither slides under
+         the other while the list scrolls. -->
+    <div class="app-top">
+      <header class="app-header">
+        <h1>Task Tracker</h1>
+        <div class="header-right">
+          <span id="clock" class="clock" aria-live="off"></span>
+          <button id="refresh" class="icon-button" type="button" title="Refresh" aria-label="Refresh">
+            ⟳
+          </button>
+        </div>
+      </header>
+
+      <nav class="tabs" aria-label="Pages">
+        <a href="#/upcoming" data-tab="upcoming"><span aria-hidden="true">○</span> Upcoming <span class="badge" data-count="upcoming"></span></a>
+        <a href="#/progress" data-tab="progress"><span aria-hidden="true">▶</span> Progress <span class="badge" data-count="progress"></span></a>
+        <a href="#/finished" data-tab="finished"><span aria-hidden="true">✓</span> Finished <span class="badge" data-count="finished"></span></a>
+      </nav>
+    </div>
+
+    <main id="view" class="view" aria-live="polite"></main>
+
+    <!-- Shared modal: task details / finish notes / new task -->
+    <div id="modal-backdrop" class="modal-backdrop" hidden>
+      <div
+        id="modal"
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+      >
+        <h2 id="modal-title"></h2>
+        <div id="modal-body"></div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+    <script type="module" src="/js/app.js"></script>
   </body>
 </html>

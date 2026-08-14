@@ -1,0 +1,58 @@
+/**
+ * Thin fetch wrapper. Same-origin by default; set window.API_BASE before
+ * loading the app to point at a separately hosted API (e.g. the frontend on
+ * Cloudflare Pages, the API on Render).
+ */
+const BASE = window.API_BASE ?? '';
+
+async function request(method, path, body) {
+  let res;
+  try {
+    res = await fetch(BASE + path, {
+      method,
+      headers: body ? { 'content-type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    // Render's free tier sleeps after ~15 min idle; the first request after
+    // that can take a few seconds or fail outright.
+    throw new Error('Cannot reach the server. It may be waking up - try again.');
+  }
+
+  const text = await res.text();
+  let data = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = null;
+    }
+  }
+  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+  return data;
+}
+
+export const api = {
+  get: (path) => request('GET', path),
+  post: (path, body) => request('POST', path, body),
+  patch: (path, body) => request('PATCH', path, body),
+  del: (path) => request('DELETE', path),
+};
+
+export const listTasks = (params) => {
+  const query = new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''),
+  );
+  return api.get(`/api/tasks?${query}`);
+};
+
+export const getTask = (id) => api.get(`/api/tasks/${id}`);
+export const createTask = (body) => api.post('/api/tasks', body);
+export const updateTask = (id, body) => api.patch(`/api/tasks/${id}`, body);
+export const deleteTask = (id) => api.del(`/api/tasks/${id}`);
+export const startTask = (id) => api.post(`/api/tasks/${id}/start`);
+export const pauseTask = (id) => api.post(`/api/tasks/${id}/pause`);
+export const resumeTask = (id) => api.post(`/api/tasks/${id}/resume`);
+export const finishTask = (id, note) => api.post(`/api/tasks/${id}/finish`, { finish_note: note });
+export const reopenTask = (id) => api.post(`/api/tasks/${id}/reopen`);
+export const listCategories = () => api.get('/api/categories');

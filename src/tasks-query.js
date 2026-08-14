@@ -66,6 +66,9 @@ export function decorateTask(row) {
 
     // Derived - never stored.
     elapsed_seconds: elapsed,
+    // closed_seconds + open_session_start let the browser keep recomputing
+    // elapsed time locally, from absolute timestamps, without re-fetching.
+    closed_seconds: closed,
     is_running: isRunning,
     open_session_start: openStart,
     progress: maxTime ? elapsed / maxTime : null,
@@ -143,10 +146,10 @@ const SORTERS = {
   created_at: (a, b) => time(a.created_at) - time(b.created_at),
   name: (a, b) => a.name.localeCompare(b.name),
   elapsed: (a, b) => a.elapsed_seconds - b.elapsed_seconds,
-  // "Overtime" sorts: largest overage first is the natural reading, so these
-  // are descending by default and the order flag flips them like the others.
-  overtime_max: (a, b) => b.over_max_by_seconds - a.over_max_by_seconds,
-  overtime_due: (a, b) => b.over_due_by_seconds - a.over_due_by_seconds,
+  // Every sorter is ascending-natural, so `order` means the same thing
+  // everywhere; the UI asks for order=desc to put the largest overage first.
+  overtime_max: (a, b) => a.over_max_by_seconds - b.over_max_by_seconds,
+  overtime_due: (a, b) => a.over_due_by_seconds - b.over_due_by_seconds,
 };
 
 export const SORT_KEYS = Object.keys(SORTERS);

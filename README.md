@@ -1,7 +1,8 @@
-# Task Tracker — API server (step 1)
+# Task Tracker
 
 Personal time/task tracking, reachable from both a computer and a phone browser.
-This is step 1 of the implementation order: **server + DB schema + basic API**.
+Steps 1 and 2 of the implementation order are done: **server + DB schema + API**,
+and the **Upcoming / Progress / Finished** pages.
 
 * **Runtime** — Node.js 20+, Express, `@libsql/client`
 * **Database** — SQLite dialect. The same schema and queries run on Turso
@@ -34,8 +35,47 @@ categories, and serves on <http://localhost:3000>.
 npm run smoke
 ```
 
-45 end-to-end checks against a throwaway database: full lifecycle, session
-editing, overtime detection, calendar aggregation, error cases.
+53 end-to-end checks against a throwaway database: full lifecycle, session
+editing, overtime detection, calendar aggregation, sort reversibility, and the
+derived fields the browser depends on.
+
+## Frontend
+
+Plain ES modules in `public/` - no build step, no framework, no CDN, so what is
+committed is exactly what runs. Mobile-first; the same layout widens on desktop.
+
+| File | Role |
+| --- | --- |
+| `js/app.js` | hash router, one-second tick, tab badges |
+| `js/task-card.js` | the shared card - live time, state colours, status pill |
+| `js/task-forms.js` | new/edit, details, finish and delete dialogs |
+| `js/format.js` | UTC → local rendering, `90m` / `1h30m` duration parsing |
+| `js/color.js` | category hue + per-task lightness; golden-angle task hues |
+| `js/pages/*.js` | Upcoming, Progress, Finished |
+
+**The card recomputes, it never accumulates.** It keeps `closed_seconds` and
+`open_session_start` from the API and derives elapsed time on every tick, so a
+card left open on screen stays right, and so does one drawn after the phone
+slept for an hour. The same maths decides live whether a running task has
+crossed `max_time` and should turn red.
+
+**Colour is never the only signal.** Every state colour is paired with an icon
+and a word: ▶ Running (yellow), ⏸ Paused (blue), ⚠ Overtime (red, past
+max_time), ⚠ Overdue (red, past the due date only), ○ Upcoming, ✓ Finished.
+Category identity is separate from state: a dot carries the category's fixed
+hue, with lightness varying per task inside that category, and the category name
+is spelled out next to it.
+
+**Pages**
+
+* **Upcoming** — due-date order with a reverse toggle; overdue pinned to the top
+  regardless; Expected/Max on every card; Start, Edit, Delete; New task form.
+* **Progress** — started tasks only, running or paused, with the progress bar at
+  `elapsed / max_time`; Pause/Resume, Details (edit notes), Finish (note modal).
+  Several tasks can run at once.
+* **Finished** — five sort options, each reversible: finished date, due date,
+  start date, overtime by max time, overtime by due date. Overruns keep the red
+  border and the overage figure. Details, Reopen, Delete.
 
 ## Deploy — Phase A
 
@@ -158,13 +198,12 @@ days so the calendar grid needs no gap filling.
 | --- | --- |
 | Upcoming | `GET /api/tasks?status=upcoming&sort=due_date&pin_overdue=1` |
 | Progress | `GET /api/tasks?status=in_progress,paused` |
-| Finished | `GET /api/tasks?status=finished&sort=overtime_max&order=asc` |
+| Finished | `GET /api/tasks?status=finished&sort=overtime_max&order=desc` |
 | Overview | the three calls above, `?due_before=` for the week/month filter |
 | Calendar | `GET /api/stats/daily?from=&to=&tz=` then `GET /api/stats/day/:day?tz=` |
 
 ## Next steps
 
-2. Upcoming / Progress / Finished pages (core flow) — the frontend in `public/`
 3. Overview + Calendar + pie chart
 4. Exercise page (stopwatch; `exercise_sets` table and its endpoints)
 5. Phase B — local server or Raspberry Pi + Tailscale, verify phone access

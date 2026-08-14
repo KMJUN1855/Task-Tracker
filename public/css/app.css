@@ -1,0 +1,438 @@
+/* Task Tracker - mobile first, works the same on a desktop browser.
+   Status is never signalled by colour alone: every state colour is paired with
+   an icon and a text label. */
+
+:root {
+  --bg: #14161a;
+  --surface: #1c1f26;
+  --surface-2: #242832;
+  --line: #2f3440;
+  --text: #e7e9ee;
+  --text-dim: #9aa2b1;
+
+  /* State colours - see the state machine in the spec. */
+  --running: #f2c14e;
+  --paused: #5b9df0;
+  --over: #ef5f5f;
+  --idle: #7b8494;
+  --done: #5fcf8f;
+
+  --radius: 12px;
+  --tap: 44px; /* minimum comfortable touch target */
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  line-height: 1.45;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* ------------------------------------------------------------ app chrome */
+
+.app-top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg);
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 1rem calc(0.7rem + env(safe-area-inset-top)) 1rem;
+  padding-top: calc(0.7rem + env(safe-area-inset-top));
+  background: rgba(20, 22, 26, 0.92);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.clock {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.icon-button {
+  min-width: 2rem;
+  min-height: 2rem;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 8px;
+  cursor: pointer;
+  line-height: 1;
+}
+.icon-button:active { background: var(--surface-2); }
+.icon-button.spinning { animation: spin 0.6s linear; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.tabs {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.tabs a {
+  flex: 1;
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.6rem 0.4rem;
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 0.9rem;
+  border-bottom: 2px solid transparent;
+}
+
+.tabs a[aria-current="page"] {
+  color: var(--text);
+  border-bottom-color: var(--running);
+  font-weight: 600;
+}
+
+.badge {
+  min-width: 1.4em;
+  padding: 0 0.35em;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  text-align: center;
+}
+.badge:empty { display: none; }
+
+.view {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 0.9rem 0.9rem 4rem;
+}
+
+/* ------------------------------------------------------------- controls */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.9rem;
+}
+
+.toolbar label {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+/* Keep the sort select and its reverse toggle on one line on a phone. */
+.toolbar select {
+  flex: 1 1 7rem;
+  min-width: 0;
+  width: auto;
+}
+.toolbar .button { flex: 0 0 auto; }
+
+select, input[type="text"], input[type="datetime-local"], textarea {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+  min-height: var(--tap);
+  width: 100%;
+}
+
+textarea { min-height: 7rem; resize: vertical; line-height: 1.5; }
+
+.button {
+  min-height: var(--tap);
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.button:active { transform: translateY(1px); }
+.button.primary { background: var(--running); border-color: var(--running); color: #221b06; font-weight: 650; }
+.button.danger { color: var(--over); border-color: #4a2b2f; }
+.button.ghost { background: transparent; }
+.button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.spacer { flex: 1; }
+
+/* ---------------------------------------------------------------- cards */
+
+.card-list { display: flex; flex-direction: column; gap: 0.65rem; }
+
+.card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--idle);
+  border-radius: var(--radius);
+  padding: 0.75rem 0.85rem;
+}
+
+/* State colours. Each is mirrored by the .status-pill text, so colour is a
+   redundant cue rather than the only one. */
+.card.is-running  { border-left-color: var(--running); }
+.card.is-paused   { border-left-color: var(--paused); }
+.card.is-over     { border-left-color: var(--over); border-color: var(--over); }
+.card.is-finished { border-left-color: var(--done); }
+
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+}
+
+.card-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+/* Category identity: fixed hue per category, lightness varies per task. */
+.cat-dot {
+  flex: none;
+  width: 0.85rem;
+  height: 0.85rem;
+  margin-top: 0.28rem;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.status-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+.status-pill.running  { color: var(--running); }
+.status-pill.paused   { color: var(--paused); }
+.status-pill.over     { color: var(--over); }
+.status-pill.overdue  { color: var(--over); }
+.status-pill.upcoming { color: var(--idle); }
+.status-pill.finished { color: var(--done); }
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.9rem;
+  margin-top: 0.45rem;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+.meta b {
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.meta .over-text { color: var(--over); font-weight: 650; }
+
+.elapsed {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin-top: 0.4rem;
+}
+.elapsed.running { color: var(--running); }
+.elapsed.paused  { color: var(--paused); }
+.elapsed.over    { color: var(--over); }
+
+.progress {
+  height: 7px;
+  margin-top: 0.5rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.progress > i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--idle);
+  transition: width 0.4s linear;
+}
+.progress.running > i { background: var(--running); }
+.progress.paused  > i { background: var(--paused); }
+.progress.over    > i { background: var(--over); }
+.progress.finished > i { background: var(--done); }
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.7rem;
+}
+.actions .button { flex: 1 1 auto; min-width: 5.5rem; font-size: 0.9rem; }
+
+.note-preview {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  background: var(--surface-2);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* --------------------------------------------------------------- states */
+
+.empty {
+  text-align: center;
+  padding: 2.5rem 1rem;
+  color: var(--text-dim);
+}
+.empty .big { font-size: 2rem; display: block; margin-bottom: 0.5rem; }
+
+.error-banner {
+  background: #3a2226;
+  border: 1px solid var(--over);
+  color: #ffd9d9;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius);
+  margin-bottom: 0.9rem;
+}
+
+.section-title {
+  margin: 1.4rem 0 0.6rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+/* ---------------------------------------------------------------- modal */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+}
+
+.modal {
+  width: 100%;
+  max-width: 34rem;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom));
+}
+
+.modal h2 { margin: 0 0 0.8rem; font-size: 1.05rem; }
+
+.field { margin-bottom: 0.8rem; }
+.field > label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin-bottom: 0.3rem;
+}
+.hint { font-size: 0.75rem; color: var(--text-dim); margin-top: 0.25rem; }
+
+.field-row { display: flex; gap: 0.6rem; }
+.field-row > .field { flex: 1; }
+
+.modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.modal-actions .button { flex: 1; }
+
+.form-error {
+  color: var(--over);
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+  min-height: 1.2em;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.88rem;
+}
+.detail-row span:first-child { color: var(--text-dim); }
+.detail-row span:last-child { font-variant-numeric: tabular-nums; text-align: right; }
+.detail-row .over-text { color: var(--over); font-weight: 650; }
+
+/* ---------------------------------------------------------------- toast */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1.2rem + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 60;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.5rem 1rem;
+  font-size: 0.88rem;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  max-width: 90vw;
+}
+.toast.error { border-color: var(--over); color: #ffd9d9; }
+
+/* ------------------------------------------------------------- desktop */
+
+@media (min-width: 40rem) {
+  .modal-backdrop { align-items: center; padding: 1rem; }
+  .modal { border-radius: var(--radius); }
+  .actions .button { flex: 0 0 auto; }
+  .view { padding-top: 1.2rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
