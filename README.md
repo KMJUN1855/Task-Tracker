@@ -158,10 +158,21 @@ turns that date into 23:59 local, shows an editable row per task with a tick box
 and only then creates them through the ordinary `POST /api/tasks` — so they are
 identical to hand-made tasks.
 
-**When it fails.** A rate limit returns 429 with "wait a moment and try again",
-a bad key and an outage return a message naming the cause, and the pasted text
-stays in the box so you can retry. None of it touches the rest of the app; the
-suite asserts that tasks can still be created while AI is off.
+**When it fails.** Gemini returns a transient `503 "This model is currently
+experiencing high demand"` often enough to matter — roughly one call in three
+during testing, on a request that succeeded unchanged seconds later. So a 5xx or
+a dropped connection is **retried automatically** (3 attempts, backing off)
+before the user ever hears about it, and the upstream detail goes to the server
+log so a real outage is still diagnosable.
+
+`429` is deliberately *not* retried: that is the free-tier quota, and hammering
+it makes it worse. It returns "wait a moment and try again". A bad key and a
+timeout each name their cause, and the pasted text stays in the box for a retry.
+None of it touches the rest of the app; the suite asserts that tasks can still
+be created while AI is off.
+
+Free-tier quota is small — a handful of bulk parses in quick succession will
+exhaust it, and it comes back on its own.
 
 `GEMINI_MODEL` overrides the model. The default is the **`gemini-flash-latest`
 alias**, not a pinned version, because Google retires numbered ones —

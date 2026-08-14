@@ -25,6 +25,8 @@ const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-latest';
 const MAX_INPUT_CHARS = 8000;
 const MAX_ITEMS = 50;
 const TIMEOUT_MS = 30000;
+const TRANSIENT_RETRIES = 2;
+const RETRY_DELAY_MS = 700;
 
 const apiKey = () => process.env.GEMINI_API_KEY?.trim() || null;
 
@@ -176,15 +178,66 @@ async function discoverModel(key, failedModel) {
   );
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Gemini returns a transient 5xx often enough to matter - roughly one call in
+ * three during testing, on a request that succeeds unchanged moments later. So
+ * a 5xx or a dropped connection is retried here rather than handed to the user
+ * as "try again"; only a definitive answer (2xx, or a 4xx we should act on)
+ * leaves this function.
+ *
+ * 429 is deliberately NOT retried: that is a quota limit, and hammering it
+ * makes it worse. It goes straight back as "wait a moment".
+ */
+async function generateWithRetry(key, model, prompt) {
+  let lastRes = null;
+  let lastBody = '';
+
+  for (let attempt = 0; attempt <= TRANSIENT_RETRIES; attempt += 1) {
+    let res;
+    try {
+      res = await generate(key, model, prompt);
+    } catch (error) {
+      const timedOut = error?.name === 'AbortError';
+      console.warn(
+        `[ai] ${timedOut ? 'timeout' : 'network error'} on ${model} (attempt ${attempt + 1})`,
+      );
+      if (attempt < TRANSIENT_RETRIES) {
+        await sleep(RETRY_DELAY_MS * (attempt + 1));
+        continue;
+      }
+      throw new HttpError(
+        502,
+        timedOut
+          ? 'Gemini took too long to answer. Please try again.'
+          : 'Could not reach Gemini. Check the connection and try again.',
+      );
+    }
+
+    if (res.status < 500) return res;
+
+    lastRes = res;
+    lastBody = await res.text().catch(() => '');
+    // Keep the upstream detail in the server log; the user gets the short line.
+    console.warn(
+      `[ai] Gemini ${res.status} on ${model} (attempt ${attempt + 1}): ${lastBody.slice(0, 200)}`,
+    );
+    if (attempt < TRANSIENT_RETRIES) await sleep(RETRY_DELAY_MS * (attempt + 1));
+  }
+
+  throw upstreamError(lastRes, lastBody);
+}
+
 async function callGemini(key, prompt) {
   let model = resolvedModel ?? DEFAULT_MODEL;
-  let res = await generate(key, model, prompt);
+  let res = await generateWithRetry(key, model, prompt);
 
   if (res.status === 404) {
     const discovered = await discoverModel(key, model);
     if (discovered) {
       model = discovered;
-      res = await generate(key, model, prompt);
+      res = await generateWithRetry(key, model, prompt);
     }
   }
 
@@ -231,7 +284,10 @@ function upstreamError(res, bodyText) {
     );
   }
   if (res.status >= 500) {
-    return new HttpError(502, 'Gemini is having trouble right now. Please try again shortly.');
+    return new HttpError(
+      502,
+      `Gemini is having trouble right now - already retried ${TRANSIENT_RETRIES + 1} times. Please try again shortly.`,
+    );
   }
   return new HttpError(502, `Gemini request failed (${res.status}). ${detail}`.trim());
 }
