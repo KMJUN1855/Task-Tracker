@@ -33,9 +33,17 @@ const apiKey = () => process.env.GEMINI_API_KEY?.trim() || null;
 /** Model ids change over time; remember whichever one worked. */
 let resolvedModel = null;
 
-/** GET /api/ai/status - lets the UI hide the feature instead of failing later. */
+/**
+ * GET /api/ai/status - lets the UI hide the feature instead of failing later.
+ * `retries` also makes it possible to tell which build is live without spending
+ * a Gemini call, which matters because the free-tier quota is small.
+ */
 router.get('/status', (req, res) => {
-  res.json({ configured: Boolean(apiKey()), model: resolvedModel ?? DEFAULT_MODEL });
+  res.json({
+    configured: Boolean(apiKey()),
+    model: resolvedModel ?? DEFAULT_MODEL,
+    retries: TRANSIENT_RETRIES,
+  });
 });
 
 /**
