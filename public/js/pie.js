@@ -60,7 +60,9 @@ function arcPath(cx, cy, r, startAngle, endAngle) {
 }
 
 /**
- * @param slices [{ label, seconds, color }] - order is preserved
+ * @param slices [{ label, seconds, color, pattern }] - order is preserved.
+ *   `pattern: false` leaves a slice flat, for filler like "Untracked" that is
+ *   absence of data rather than data.
  * @returns a figure element containing the chart and its legend
  */
 export function renderPie(slices, { size = 220, title = 'Time distribution' } = {}) {
@@ -106,7 +108,7 @@ export function renderPie(slices, { size = 220, title = 'Time distribution' } = 
     base.setAttribute('stroke-width', '1.5');
     svg.append(base);
 
-    if (PATTERNS[index % PATTERNS.length]) {
+    if (slice.pattern !== false && PATTERNS[index % PATTERNS.length]) {
       const overlay = shape();
       overlay.setAttribute('fill', `url(#pie-pattern-${index})`);
       overlay.setAttribute('stroke', 'none');
@@ -128,7 +130,9 @@ export function renderPie(slices, { size = 220, title = 'Time distribution' } = 
   slices.forEach((slice, index) => {
     const item = document.createElement('li');
     const swatch = document.createElement('span');
-    swatch.className = `pie-swatch pattern-${index % PATTERNS.length}`;
+    swatch.className = `pie-swatch pattern-${
+      slice.pattern === false ? 0 : index % PATTERNS.length
+    }`;
     swatch.style.background = slice.color;
     swatch.setAttribute('aria-hidden', 'true');
 

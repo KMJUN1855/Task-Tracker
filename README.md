@@ -88,8 +88,22 @@ is spelled out next to it.
 * **Calendar** — a month grid where each day shows a meter and the hours
   tracked; picking a day gives the pie chart first, then the per-task
   breakdown bars, then what was finished that day and how far before or after
-  its due date that landed. The pie toggles between by-task (golden-angle hues)
-  and by-category (the categories' fixed hues).
+  its due date that landed.
+
+The pie has two independent switches:
+
+* **Scale** — *24-hour* (the default) measures against the whole 00:00–24:00
+  day, so each task takes only the share it actually used and the remainder
+  becomes a flat grey **Untracked** slice. *Tracked time* takes only the time
+  logged that day as 100%, with no Untracked slice.
+* **Grouping** — *By task* (golden-angle hues) or *By category* (the
+  categories' fixed hues).
+
+The 24-hour denominator is the real length of that local day, so it is 23h or
+25h across a DST changeover rather than a flat 86400 — relevant in Canada,
+not in Korea. Tasks may run concurrently, so a day's tracked time can exceed
+the day itself; there is simply no Untracked slice then. The breakdown bars
+below the pie stay a per-task chart and never list Untracked.
 
 The month's daily stats already carry each day's by-task and by-category split,
 so selecting a day costs one request, not two. Sessions that run past midnight

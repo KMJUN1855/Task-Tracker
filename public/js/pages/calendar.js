@@ -14,7 +14,11 @@ import { renderPie, renderBreakdown } from '../pie.js';
 export const title = 'Calendar';
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MODE_KEY = 'tt.calendar.mode';
+const MODE_KEY = 'tt.calendar.mode'; // task | category
+const VIEW_KEY = 'tt.calendar.view'; // 24h  | tracked
+
+/** Filler colour for the part of the day that was never tracked. */
+const UNTRACKED_COLOR = 'hsl(220 8% 28%)';
 
 /** Local calendar day of a Date, as YYYY-MM-DD. */
 const dayKey = (date) =>
@@ -33,6 +37,54 @@ const loadMode = () => {
     return 'task';
   }
 };
+
+/** The spec's pie is the whole 00:00-24:00 day, so that is the default. */
+const loadView = () => {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'tracked' ? 'tracked' : '24h';
+  } catch {
+    return '24h';
+  }
+};
+
+const remember = (key, value) => {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* private mode - the choice just won't persist */
+  }
+};
+
+/**
+ * Length of a local calendar day in seconds. Normally 86400, but 23h or 25h on
+ * a DST changeover - which Canada has and Korea does not, so this matters for
+ * the move rather than being hypothetical.
+ */
+function dayLengthSeconds(dayKeyString) {
+  const [year, month, date] = dayKeyString.split('-').map(Number);
+  const start = new Date(year, month - 1, date);
+  const next = new Date(year, month - 1, date + 1);
+  return Math.round((next - start) / 1000);
+}
+
+/** A row of chips bound to a localStorage key. */
+function chipRow(options, current, onPick, label) {
+  const row = document.createElement('div');
+  row.className = 'chips';
+  row.setAttribute('role', 'group');
+  if (label) row.setAttribute('aria-label', label);
+  for (const option of options) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = `chip${option.value === current ? ' active' : ''}`;
+    chip.textContent = option.label;
+    if (option.title) chip.title = option.title;
+    chip.setAttribute('aria-pressed', String(option.value === current));
+    chip.addEventListener('click', () => onPick(option.value));
+    row.append(chip);
+  }
+  return row;
+}
 
 export async function render(container, ctx) {
   const today = new Date();
@@ -190,31 +242,42 @@ async function renderDayDetail(container, day) {
   container.replaceChildren(heading);
 
   const mode = loadMode();
-  const toggle = document.createElement('div');
-  toggle.className = 'chips';
-  for (const option of [
-    { value: 'task', label: 'By task' },
-    { value: 'category', label: 'By category' },
-  ]) {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = `chip${option.value === mode ? ' active' : ''}`;
-    chip.textContent = option.label;
-    chip.setAttribute('aria-pressed', String(option.value === mode));
-    chip.addEventListener('click', () => {
-      try {
-        localStorage.setItem(MODE_KEY, option.value);
-      } catch {
-        /* private mode - the choice just won't persist */
-      }
-      renderDayDetail(container, day);
-    });
-    toggle.append(chip);
-  }
-  container.append(toggle);
+  const view = loadView();
+  const rerender = () => renderDayDetail(container, day);
+
+  // Two independent switches: what the whole pie represents, and how the
+  // tracked time inside it is grouped.
+  container.append(
+    chipRow(
+      [
+        { value: '24h', label: '24-hour', title: 'The whole day, 00:00-24:00, including untracked time' },
+        { value: 'tracked', label: 'Tracked time', title: 'Only the time actually tracked on this day' },
+      ],
+      view,
+      (value) => {
+        remember(VIEW_KEY, value);
+        rerender();
+      },
+      'Pie chart scale',
+    ),
+  );
+  container.append(
+    chipRow(
+      [
+        { value: 'task', label: 'By task' },
+        { value: 'category', label: 'By category' },
+      ],
+      mode,
+      (value) => {
+        remember(MODE_KEY, value);
+        rerender();
+      },
+      'Pie chart grouping',
+    ),
+  );
 
   // Pie first, then the breakdown below it - the order the spec asks for.
-  const slices =
+  const entries =
     mode === 'category'
       ? (day?.by_category ?? []).map((entry) => ({
           label: entry.name,
@@ -227,8 +290,31 @@ async function renderDayDetail(container, day) {
           color: taskColor(index),
         }));
 
-  container.append(renderPie(slices, { title: `Time on ${selectedDay}` }));
-  if (slices.length > 0) container.append(renderBreakdown(slices));
+  const slices = [...entries];
+  if (view === '24h') {
+    // Tasks may run concurrently, so tracked time can legitimately exceed the
+    // length of the day; there is simply no untracked remainder then.
+    const dayLength = dayLengthSeconds(selectedDay);
+    const untracked = dayLength - entries.reduce((sum, entry) => sum + entry.seconds, 0);
+    if (untracked > 0) {
+      slices.push({
+        label: 'Untracked',
+        seconds: untracked,
+        color: UNTRACKED_COLOR,
+        pattern: false, // absence of data, not a category of it
+      });
+    }
+  }
+
+  container.append(
+    renderPie(slices, {
+      title:
+        view === '24h' ? `Time on ${selectedDay}, whole day` : `Tracked time on ${selectedDay}`,
+    }),
+  );
+
+  // The breakdown below stays a per-task chart, so it never lists "Untracked".
+  if (entries.length > 0) container.append(renderBreakdown(entries));
 
   const finishedHeading = document.createElement('h3');
   finishedHeading.className = 'section-title';
