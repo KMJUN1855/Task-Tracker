@@ -73,7 +73,17 @@ export const statsDay = (day) =>
 export const activeWorkout = () => api.get('/api/exercise/active');
 export const listWorkouts = (limit = 20) => api.get(`/api/exercise/workouts?limit=${limit}`);
 export const startWorkout = (name) => api.post('/api/exercise/workouts', { name });
-export const startSet = (id) => api.post(`/api/exercise/workouts/${id}/sets/start`);
+/**
+ * Omitting typeName lets the server carry the previous set's type forward;
+ * passing a string starts a new type, and passing null goes back to untyped.
+ */
+export const startSet = (id, typeName) =>
+  api.post(
+    `/api/exercise/workouts/${id}/sets/start`,
+    typeName === undefined ? undefined : { type_name: typeName },
+  );
+
+export const listTypes = () => api.get('/api/exercise/types');
 export const stopSet = (id) => api.post(`/api/exercise/workouts/${id}/sets/stop`);
 export const finishWorkout = (id, note) =>
   api.post(`/api/exercise/workouts/${id}/finish`, { finish_note: note });

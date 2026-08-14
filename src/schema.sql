@@ -56,12 +56,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_single_open
 -- the end of the session for the last set), so it is derived on read like every
 -- other duration in this schema. Storing it would drift the moment a timestamp
 -- was corrected.
+-- Deliberately no inline comments inside this CREATE TABLE. SQLite's DROP
+-- COLUMN rewrites the stored DDL text by excising the column's tokens, and a
+-- trailing `--` comment on the last column leaves a dangling comma behind,
+-- reported as "incomplete input". Column notes live here instead:
+--   start_time / end_time : UTC; end_time NULL = the set is running
+--   type_name             : which exercise this set belongs to ("Squat"),
+--                           NULL = untyped. Carried forward from the previous
+--                           set unless the user starts a new type.
 CREATE TABLE IF NOT EXISTS exercise_sets (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   set_index  INTEGER NOT NULL,
-  start_time TEXT    NOT NULL,                -- UTC
-  end_time   TEXT                             -- UTC, NULL = set running
+  start_time TEXT    NOT NULL,
+  end_time   TEXT,
+  type_name  TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_exercise_sets_session ON exercise_sets(session_id);

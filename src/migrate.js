@@ -75,11 +75,27 @@ async function dropLegacyRestAfter(log) {
   log(`rebuilt exercise_sets without rest_after, ${total} row(s) preserved`);
 }
 
+/**
+ * `type_name` groups a workout's sets by exercise. CREATE TABLE IF NOT EXISTS
+ * skips databases that already have the table, so add it here.
+ *
+ * ADD COLUMN is safe where DROP COLUMN was not: it appends to the stored DDL
+ * rather than excising tokens out of the middle of it, so no re-parse trap.
+ * Existing rows get NULL, which reads as untyped.
+ */
+async function addSetTypeName(log) {
+  const columns = await all('PRAGMA table_info(exercise_sets)');
+  if (columns.some((column) => column.name === 'type_name')) return;
+  await run('ALTER TABLE exercise_sets ADD COLUMN type_name TEXT');
+  log('added exercise_sets.type_name');
+}
+
 export async function migrate({ log = () => {} } = {}) {
   const schema = readFileSync(schemaPath, 'utf8');
   await db.executeMultiple(schema);
   log(`schema applied (${dbTarget})`);
   await dropLegacyRestAfter(log);
+  await addSetTypeName(log);
 
   // Seed only into a virgin database, so a category the user deleted on purpose
   // never comes back on the next deploy.

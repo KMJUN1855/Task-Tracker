@@ -45,6 +45,7 @@ function shapeSets(rows, sessionEnd) {
     return {
       id: Number(row.id),
       set_index: Number(row.set_index),
+      type_name: row.type_name ?? null,
       start_time: row.start_time,
       end_time: row.end_time,
       is_running: isRunning,
@@ -55,6 +56,35 @@ function shapeSets(rows, sessionEnd) {
       rest_running: !isRunning && !next && !sessionEnd,
     };
   });
+}
+
+/**
+ * Sets grouped into consecutive runs of the same type - the shape both the live
+ * set log and the Details view render, so they cannot drift apart.
+ *
+ * Grouping is by consecutive run, not by name: alternating Squat / Bench / Squat
+ * yields three groups, which is what actually happened. Merging by name would
+ * hide the interleaving.
+ */
+function groupSetsByType(sets) {
+  const groups = [];
+  for (const set of sets) {
+    const last = groups[groups.length - 1];
+    if (last && last.type_name === set.type_name) {
+      last.sets.push(set);
+    } else {
+      groups.push({ type_name: set.type_name, sets: [set] });
+    }
+  }
+  return groups.map((group, index) => ({
+    index: index + 1,
+    type_name: group.type_name,
+    set_count: group.sets.length,
+    // Time under load for this exercise, and the rest taken within it.
+    total_seconds: group.sets.reduce((sum, set) => sum + set.duration_seconds, 0),
+    rest_seconds: group.sets.reduce((sum, set) => sum + (set.rest_after_seconds ?? 0), 0),
+    sets: group.sets,
+  }));
 }
 
 async function loadWorkout(taskId) {
@@ -84,6 +114,9 @@ async function loadWorkout(taskId) {
       is_running: session.end_time === null,
     },
     sets,
+    type_groups: groupSetsByType(sets),
+    // What the next set inherits if the user does not pick a new type.
+    current_type: sets.length ? sets[sets.length - 1].type_name : null,
     // Total time is the session, exactly as for any other task.
     total_seconds: secondsBetween(session.start_time, session.end_time),
     set_seconds: sets.reduce((sum, set) => sum + set.duration_seconds, 0),
@@ -184,7 +217,12 @@ router.get(
   }),
 );
 
-/** POST /api/exercise/workouts/:id/sets/start - "Start Set". */
+/**
+ * POST /api/exercise/workouts/:id/sets/start  { type_name? }
+ * "Start Set". Omitting type_name carries the previous set's type forward, so
+ * a run of sets on the same exercise needs no repeated input; passing one
+ * starts a new type from this set on. Pass null to go back to untyped.
+ */
 router.post(
   '/workouts/:id/sets/start',
   wrap(async (req, res) => {
@@ -193,15 +231,44 @@ router.post(
     if (!session) throw conflict('This workout is not running');
     if (await openSet(session.id)) throw conflict('A set is already running');
 
+    const previous = await one(
+      'SELECT type_name FROM exercise_sets WHERE session_id = ? ORDER BY set_index DESC LIMIT 1',
+      [session.id],
+    );
+    const body = req.body ?? {};
+    const provided = optionalString(body, 'type_name', { max: 100 });
+    const typeName = provided === undefined ? (previous?.type_name ?? null) : provided;
+
     const [{ count }] = await all(
       'SELECT COUNT(*) AS count FROM exercise_sets WHERE session_id = ?',
       [session.id],
     );
     await run(
-      'INSERT INTO exercise_sets (session_id, set_index, start_time) VALUES (?, ?, ?)',
-      [session.id, Number(count) + 1, nowIso()],
+      'INSERT INTO exercise_sets (session_id, set_index, start_time, type_name) VALUES (?, ?, ?, ?)',
+      [session.id, Number(count) + 1, nowIso(), typeName],
     );
     res.json(await loadWorkout(id));
+  }),
+);
+
+/**
+ * GET /api/exercise/types - type names used recently, most recent first, to
+ * populate the picker so common lifts need typing only once.
+ */
+router.get(
+  '/types',
+  wrap(async (req, res) => {
+    const limit = optionalInt(req.query, 'limit', { min: 1, max: 100 }) ?? 25;
+    const rows = await all(
+      `SELECT es.type_name, MAX(es.start_time) AS last_used
+         FROM exercise_sets es
+        WHERE es.type_name IS NOT NULL AND TRIM(es.type_name) != ''
+        GROUP BY es.type_name
+        ORDER BY last_used DESC
+        LIMIT ?`,
+      [limit],
+    );
+    res.json(rows.map((row) => ({ type_name: row.type_name, last_used: row.last_used })));
   }),
 );
 

@@ -345,9 +345,67 @@ check(
 );
 check('the running set has no rest yet', twoSets.data.sets[1].rest_after_seconds === null);
 
+/* ------------------------------------------------------------ set types */
+
+// The two sets so far are untyped; name the next one and check it sticks,
+// carries forward, and groups.
+await api('POST', `/api/exercise/workouts/${workoutId}/sets/stop`);
+await api('POST', `/api/exercise/workouts/${workoutId}/sets/start`, { type_name: 'Squat' });
+await api('POST', `/api/exercise/workouts/${workoutId}/sets/stop`);
+const carried = await api('POST', `/api/exercise/workouts/${workoutId}/sets/start`);
+check(
+  'omitting type_name carries the previous type forward',
+  carried.data.sets[carried.data.sets.length - 1].type_name === 'Squat',
+);
+await api('POST', `/api/exercise/workouts/${workoutId}/sets/stop`);
+
+const switched = await api('POST', `/api/exercise/workouts/${workoutId}/sets/start`, {
+  type_name: 'Bench Press',
+});
+check('passing a type starts a new one', switched.data.current_type === 'Bench Press');
+await api('POST', `/api/exercise/workouts/${workoutId}/sets/stop`);
+
+const backToSquat = await api('POST', `/api/exercise/workouts/${workoutId}/sets/start`, {
+  type_name: 'Squat',
+});
+const groups = backToSquat.data.type_groups;
+const groupNames = groups.map((g) => g.type_name);
+check(
+  'grouping follows consecutive runs, not name',
+  // Squat appears twice: returning to an exercise opens a new group rather
+  // than merging back into the earlier one.
+  JSON.stringify(groupNames) === JSON.stringify([null, 'Squat', 'Bench Press', 'Squat']),
+  JSON.stringify(groupNames),
+);
+check(
+  'group set counts add up to the flat list',
+  groups.reduce((sum, g) => sum + g.set_count, 0) === backToSquat.data.sets.length,
+);
+check(
+  'a group total is the sum of its own sets',
+  groups.every(
+    (g) => g.total_seconds === g.sets.reduce((sum, s) => sum + s.duration_seconds, 0),
+  ),
+);
+
+const typeList = await api('GET', '/api/exercise/types');
+check(
+  'recent types are offered for reuse',
+  typeList.data.some((t) => t.type_name === 'Squat') &&
+    typeList.data.some((t) => t.type_name === 'Bench Press'),
+);
+check(
+  'untyped sets never appear as a type',
+  typeList.data.every((t) => t.type_name !== null && t.type_name !== ''),
+);
+
 const finishedWorkout = await api('POST', `/api/exercise/workouts/${workoutId}/finish`, {
   finish_note: 'Squats 5x5',
 });
+check(
+  'finished workout keeps its type groups for the details view',
+  finishedWorkout.data.type_groups.length === groups.length,
+);
 check(
   'finish closes the workout and any running set',
   finishedWorkout.data.task.status === 'finished' &&

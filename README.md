@@ -36,7 +36,7 @@ categories, and serves on <http://localhost:3000>.
 npm run smoke
 ```
 
-69 end-to-end checks against a throwaway database: full lifecycle, session
+77 end-to-end checks against a throwaway database: full lifecycle, session
 editing, overtime detection, calendar aggregation, sort reversibility, the
 exercise stopwatch flow, and the derived fields the browser depends on.
 
@@ -92,7 +92,20 @@ is spelled out next to it.
   breakdown bars, then what was finished that day and how far before or after
   its due date that landed.
 
-The pie has two independent switches:
+* **Exercise** — the stopwatch flow, separate from the standard task flow:
+  Start Total → Start Set → Stop Set (rest begins) → Start Set → … → Finish
+  Total. Total time sits above the current set/rest clock, which is the largest
+  thing on the page. The current exercise is shown next to Start Set, with
+  **Start new type** to switch — type a name or pick a recent one; the change
+  applies to the next set, and the set log groups by exercise. Rest presets are
+  1 / 1.5 / 2 / 3 / 5 min plus **No alarm**, which keeps timing and recording the
+  rest but counts up silently and never fires. The next set never starts by
+  itself — the alarm only says it is time. See the alarm section below for what
+  that alarm can and cannot do.
+
+### The calendar pie
+
+Two independent switches:
 
 * **Scale** — *24-hour* (the default) measures against the whole 00:00–24:00
   day, so each task takes only the share it actually used and the remainder
@@ -116,14 +129,6 @@ tooltip a phone would not show. Tasks may run concurrently, so tracked time can
 exceed the window being measured; there is simply no Untracked slice then. The
 breakdown bars below the pie stay a per-task chart and never list Untracked.
 
-* **Exercise** — the stopwatch flow, separate from the standard task flow:
-  Start Total → Start Set → Stop Set (rest begins) → Start Set → … → Finish
-  Total. Total time sits above the current set/rest clock, which is the largest
-  thing on the page. Rest presets are 1 / 1.5 / 2 / 3 / 5 min plus **No alarm**,
-  which keeps timing and recording the rest but counts up silently and never
-  fires. The next set never starts by itself — the alarm only says it is time.
-  See the alarm section below for what that alarm can and cannot do.
-
 The month's daily stats already carry each day's by-task and by-category split,
 so selecting a day costs one request, not two. Sessions that run past midnight
 are cut at local midnight by the API and counted against both days.
@@ -140,17 +145,16 @@ and is gitignored. To rotate the token later:
 turso db tokens invalidate task-tracker && turso db tokens create task-tracker
 ```
 
-**2. Push this folder to a GitHub repo** (it is not a git repo yet):
+**2. GitHub — done.** `KMJUN1855/Task-Tracker` (private).
 
-```bash
-cd "task-tracker" && git init && git add -A && git commit -m "Task tracker: server, schema, API"
-```
-
-**3. Render** — New → Web Service → connect the repo. `render.yaml` already
-sets build (`npm ci`), start (`npm start`), health check (`/api/health`) and the
-free plan. Add the two environment variables from step 1 in the dashboard:
-`DATABASE_URL` and `DATABASE_AUTH_TOKEN`. The schema is applied automatically on
-every boot, so there is no separate migration step.
+**3. Render — done.** Live at <https://task-tracker-j0oq.onrender.com>, deploying
+automatically on every push to `main`. `render.yaml` sets build (`npm ci`), start
+(`npm start`), health check (`/api/health`) and the free plan;
+`DATABASE_URL` and `DATABASE_AUTH_TOKEN` are set in the dashboard. The schema is
+applied on every boot, so there is no separate migration step — but note that a
+migration that throws takes the whole service down with it, since `start()` waits
+on it. Test migrations against the real Turso database, not just a local file:
+the stored DDL differs, and that difference has already broken one deploy.
 
 The free instance sleeps after ~15 minutes idle and takes a few seconds to wake.
 Because elapsed time is derived from stored timestamps, sleeping costs nothing —
@@ -180,6 +184,15 @@ appears on Overview and in the calendar totals like any other task, and only the
 detail view knows about sets. **Rest is not stored**: the rest after a set is the
 gap to the next set's start (or to the end of the session), derived on read like
 every other duration here.
+
+`exercise_sets.type_name` records which exercise a set belongs to. It carries
+forward from the previous set unless you start a new type, so a run of sets on
+one lift needs naming only once, and `NULL` simply reads as untyped. The API
+returns `type_groups` — sets collected into **consecutive runs** of the same
+name — so the live log and the Details view render from one shape and cannot
+drift. Grouping is by run rather than by name on purpose: alternating
+Squat / Bench / Squat gives three groups, which is what actually happened;
+merging by name would hide the interleaving.
 
 ## API
 
@@ -232,7 +245,8 @@ colour is never the only signal (accessibility requirement).
 | GET | `/api/exercise/active` | the workout in progress, or `null` |
 | GET | `/api/exercise/workouts` | finished workouts, `?limit=` |
 | POST | `/api/exercise/workouts` | `{name?}` — Start Total |
-| POST | `/api/exercise/workouts/:id/sets/start` | Start Set |
+| GET | `/api/exercise/types` | type names used recently, for the picker |
+| POST | `/api/exercise/workouts/:id/sets/start` | `{type_name?}` — Start Set; omit to carry the previous type forward, `null` for untyped |
 | POST | `/api/exercise/workouts/:id/sets/stop` | Stop Set; rest begins implicitly |
 | POST | `/api/exercise/workouts/:id/finish` | `{finish_note?}` — Finish Total |
 | DELETE | `/api/exercise/workouts/:id` | drop a mis-started workout |

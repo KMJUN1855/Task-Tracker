@@ -591,6 +591,56 @@ textarea { min-height: 7rem; resize: vertical; line-height: 1.5; }
 
 .alarm-status { margin-top: 0.6rem; }
 
+/* Current exercise, and the control to switch to a new one. */
+.type-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  margin: 0.7rem 0 0.2rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--line);
+}
+.type-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+.type-name { font-weight: 650; font-size: 1.05rem; }
+.type-row.untyped .type-name { color: var(--text-dim); font-weight: 500; }
+.type-pending {
+  font-size: 0.7rem;
+  color: var(--running);
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+}
+.type-change { margin-left: auto; font-size: 0.85rem; min-height: 2.2rem; padding: 0.3rem 0.7rem; }
+
+.type-groups { display: flex; flex-direction: column; gap: 0.9rem; }
+
+.type-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-bottom: 0.3rem;
+}
+.type-group-name { font-weight: 650; }
+.type-group-name.untyped { color: var(--text-dim); font-weight: 500; }
+.type-group-meta {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.type-summary {
+  margin-top: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+
 .set-list { display: flex; flex-direction: column; gap: 2px; }
 .set-row {
   display: flex;

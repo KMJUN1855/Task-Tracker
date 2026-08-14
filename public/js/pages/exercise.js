@@ -11,6 +11,7 @@
 import {
   activeWorkout,
   listWorkouts,
+  listTypes,
   startWorkout,
   startSet,
   stopSet,
@@ -51,6 +52,37 @@ let restSeconds = loadRest();
 let alarmFiredForSetId = null;
 let root = null;
 let ctxRef = null;
+let recentTypes = [];
+
+/**
+ * A type chosen but not yet used, because it only takes effect on the next
+ * Start Set. `undefined` = nothing pending, so the previous set's type carries
+ * forward. Persisted so a reload between choosing and starting does not lose it.
+ */
+const PENDING_KEY = 'tt.exercise.pendingType';
+
+function loadPendingType(workoutId) {
+  try {
+    const raw = localStorage.getItem(PENDING_KEY);
+    if (!raw) return undefined;
+    const stored = JSON.parse(raw);
+    return stored.workoutId === workoutId ? stored.type : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function savePendingType(workoutId, type) {
+  try {
+    if (type === undefined) localStorage.removeItem(PENDING_KEY);
+    else localStorage.setItem(PENDING_KEY, JSON.stringify({ workoutId, type }));
+  } catch {
+    /* private mode - the pending type just won't survive a reload */
+  }
+}
+
+const UNTYPED_LABEL = 'Untyped';
+const typeLabel = (name) => (name === null || name === undefined ? UNTYPED_LABEL : name);
 
 function loadRest() {
   try {
@@ -107,8 +139,13 @@ const el = (tag, className, text) => {
 
 export async function render(container, ctx) {
   ctxRef = ctx;
-  const [{ workout: active }, history] = await Promise.all([activeWorkout(), listWorkouts(10)]);
+  const [{ workout: active }, history, types] = await Promise.all([
+    activeWorkout(),
+    listWorkouts(10),
+    listTypes().catch(() => []),
+  ]);
   workout = active;
+  recentTypes = types;
   if (!workout) alarmFiredForSetId = null;
 
   root = el('div', 'exercise');
@@ -191,6 +228,24 @@ function renderActive(history) {
   restBar.dataset.role = 'rest-bar';
   card.append(restBar);
 
+  /* --------------------------------------------------- current exercise */
+  // Which type the next set will be filed under, and how to change it.
+  const pending = loadPendingType(workout.task.id);
+  const effectiveType = pending !== undefined ? pending : workout.current_type;
+
+  const typeRow = el('div', 'type-row');
+  const typeName = el('span', 'type-name', typeLabel(effectiveType));
+  if (effectiveType === null || effectiveType === undefined) typeRow.classList.add('untyped');
+  typeRow.append(el('span', 'type-label', 'Exercise'), typeName);
+  if (pending !== undefined && pending !== workout.current_type) {
+    typeRow.append(el('span', 'type-pending', 'starts next set'));
+  }
+  const changeButton = el('button', 'button ghost type-change', 'Start new type');
+  changeButton.type = 'button';
+  changeButton.addEventListener('click', () => openTypePicker(effectiveType));
+  typeRow.append(changeButton);
+  card.append(typeRow);
+
   /* ------------------------------------------------------------- actions */
   const actions = el('div', 'actions');
 
@@ -206,7 +261,10 @@ function renderActive(history) {
     actions.append(
       actionButton('▶ Start Set', 'primary', async () => {
         await unlock();
-        await startSet(workout.task.id);
+        // Omitting the type lets the server carry the previous one forward.
+        const chosen = loadPendingType(workout.task.id);
+        await startSet(workout.task.id, chosen);
+        savePendingType(workout.task.id, undefined);
         await ctxRef.reload();
       }),
     );
@@ -278,6 +336,58 @@ function renderActive(history) {
   root.append(el('h2', 'section-title', `Sets (${workout.sets.length})`));
   root.append(setList(workout));
 
+  /* -------------------------------------------------------- type picker */
+  function openTypePicker(current) {
+    openModal('Start new type', (body, close) => {
+      const nameInput = input('text', '', 'Squat, Bench Press, …');
+
+      const apply = async (value) => {
+        const next = value === null ? null : value.trim();
+        if (next !== null && next === '') throw new Error('Enter a name, or choose Untyped.');
+        savePendingType(workout.task.id, next);
+        close();
+        toast(
+          next === null
+            ? 'Next set will be untyped'
+            : `Next set: ${next}`,
+        );
+        await ctxRef.reload();
+      };
+
+      if (recentTypes.length) {
+        const label = el('div', 'hint', 'Recently used');
+        const chips = el('div', 'chips');
+        for (const type of recentTypes.slice(0, 12)) {
+          const chip = el('button', `chip${type.type_name === current ? ' active' : ''}`, type.type_name);
+          chip.type = 'button';
+          chip.addEventListener('click', () => {
+            apply(type.type_name).catch((error) => toast(error.message, true));
+          });
+          chips.append(chip);
+        }
+        body.append(label, chips);
+      }
+
+      body.append(field('New type', nameInput));
+      nameInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          apply(nameInput.value).catch((error) => toast(error.message, true));
+        }
+      });
+
+      const untyped = el('button', 'button ghost', 'Untyped');
+      untyped.type = 'button';
+      untyped.title = 'File the next sets under no exercise name';
+      untyped.addEventListener('click', () => {
+        apply(null).catch((error) => toast(error.message, true));
+      });
+      body.append(untyped);
+
+      body.append(modalActions('Use this type', () => apply(nameInput.value), close));
+    });
+  }
+
   root.append(el('h2', 'section-title', 'Recent workouts'));
   root.append(historyList(history));
 
@@ -305,6 +415,11 @@ function detailRow(label, value) {
   return row;
 }
 
+/**
+ * The set log, grouped into consecutive runs of the same exercise. Used by both
+ * the live workout and the Details view, so the two always match.
+ * Sets are numbered within their group, which is how you read a workout.
+ */
 function setList(data) {
   if (data.sets.length === 0) {
     const empty = el('div', 'empty');
@@ -313,34 +428,54 @@ function setList(data) {
     return empty;
   }
 
-  const list = el('div', 'set-list');
-  for (const set of data.sets) {
-    const row = el('div', 'set-row');
-    if (set.is_running) row.classList.add('running');
-    row.append(el('span', 'set-index', `#${set.set_index}`));
+  const wrap = el('div', 'type-groups');
+  for (const group of data.type_groups ?? [{ type_name: null, sets: data.sets, set_count: data.sets.length, total_seconds: 0 }]) {
+    const block = el('div', 'type-group');
 
-    const duration = el('span', 'set-duration');
-    if (set.is_running) {
-      duration.dataset.role = 'live-set';
-      duration.dataset.start = set.start_time;
-    } else {
-      duration.textContent = formatClock(set.duration_seconds);
-    }
-    row.append(duration);
+    const header = el('div', 'type-group-head');
+    const name = el('span', 'type-group-name', typeLabel(group.type_name));
+    if (group.type_name === null) name.classList.add('untyped');
+    header.append(name);
+    header.append(
+      el(
+        'span',
+        'type-group-meta',
+        `${group.set_count} set${group.set_count === 1 ? '' : 's'} · ${formatCompact(group.total_seconds)}`,
+      ),
+    );
+    block.append(header);
 
-    const rest = el('span', 'set-rest');
-    if (set.rest_running) {
-      rest.dataset.role = 'live-rest';
-      rest.dataset.start = set.end_time;
-    } else if (set.rest_after_seconds !== null) {
-      rest.textContent = `rest ${formatCompact(set.rest_after_seconds)}`;
-    } else {
-      rest.textContent = 'running';
-    }
-    row.append(rest);
-    list.append(row);
+    const list = el('div', 'set-list');
+    group.sets.forEach((set, indexInGroup) => {
+      const row = el('div', 'set-row');
+      if (set.is_running) row.classList.add('running');
+      row.append(el('span', 'set-index', `#${indexInGroup + 1}`));
+
+      const duration = el('span', 'set-duration');
+      if (set.is_running) {
+        duration.dataset.role = 'live-set';
+        duration.dataset.start = set.start_time;
+      } else {
+        duration.textContent = formatClock(set.duration_seconds);
+      }
+      row.append(duration);
+
+      const rest = el('span', 'set-rest');
+      if (set.rest_running) {
+        rest.dataset.role = 'live-rest';
+        rest.dataset.start = set.end_time;
+      } else if (set.rest_after_seconds !== null) {
+        rest.textContent = `rest ${formatCompact(set.rest_after_seconds)}`;
+      } else {
+        rest.textContent = 'running';
+      }
+      row.append(rest);
+      list.append(row);
+    });
+    block.append(list);
+    wrap.append(block);
   }
-  return list;
+  return wrap;
 }
 
 function historyList(history) {
@@ -372,6 +507,10 @@ function historyList(history) {
     if (item.set_seconds) add('Under load', formatCompact(item.set_seconds));
     if (item.task.finished_at) add('Finished', formatDateTime(item.task.finished_at));
     card.append(meta);
+
+    // Which exercises this workout covered, in order, de-duplicated.
+    const names = [...new Set((item.type_groups ?? []).map((g) => typeLabel(g.type_name)))];
+    if (names.length) card.append(el('div', 'type-summary', names.join(' · ')));
 
     if (item.task.finish_note) card.append(el('div', 'note-preview', item.task.finish_note));
 
