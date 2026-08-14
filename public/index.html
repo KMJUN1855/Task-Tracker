@@ -3,14 +3,24 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="color-scheme" content="dark light" />
+    <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#14161a" />
     <title>Task Tracker</title>
+
+    <!-- Installed to the home screen: standalone window, dark chrome. -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Tracker" />
+    <!-- black-translucent lets the page's own background show through the
+         status bar, so it matches the app instead of sitting in a black band.
+         It also means content runs under the notch, which is why the viewport
+         is viewport-fit=cover and the layout pads with env(safe-area-inset-*). -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="apple-touch-icon" href="/icons/icon-180.png" />
+
     <link rel="stylesheet" href="/css/app.css" />
-    <link
-      rel="icon"
-      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>⏱</text></svg>"
-    />
+    <link rel="icon" type="image/png" href="/icons/icon-192.png" />
   </head>
   <body>
     <!-- Header and tabs stick together as one block, so neither slides under

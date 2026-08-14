@@ -134,6 +134,33 @@ The month's daily stats already carry each day's by-task and by-category split,
 so selecting a day costs one request, not two. Sessions that run past midnight
 are cut at local midnight by the API and counted against both days.
 
+## Installing it on a phone
+
+Add to Home Screen on iOS gives a standalone window with no browser chrome.
+`manifest.json` sets the name, `display: standalone` and the dark theme colours;
+`apple-touch-icon` points at a 180px PNG.
+
+The icons are generated, not hand-drawn: `npm run icons` writes
+`public/icons/icon-{180,192,512}.png` from `tools/make-icons.mjs`, which encodes
+the PNGs with nothing but `node:zlib` — iOS ignores SVG for `apple-touch-icon`,
+and this project has no build step or image dependencies. The mark stays inside
+62% of the width so a maskable (circular) crop cannot clip it.
+
+The status bar is `black-translucent`, so the page's own background shows through
+it instead of sitting in a black band. That means content runs under the notch,
+which is why the viewport is `viewport-fit=cover` and the layout pads itself:
+
+* `.app-header` adds `env(safe-area-inset-top)` to its **top** padding
+* `.view` adds `env(safe-area-inset-bottom)` to its bottom padding, on top of the
+  4rem it already has, so the last button on a page clears the home indicator
+* `.view` and `.app-header` use `max(…, env(safe-area-inset-left/right))`, which
+  matters in landscape where the notch eats one edge
+* the modal sheet and the toast carry the bottom inset too
+
+Verified by simulating an iPhone's real insets (59px top, 34px bottom) and
+scrolling each page to the bottom: no control lands under the home indicator or
+the notch, with 77px to spare on the longest page.
+
 ## Deploy — Phase A
 
 **1. Turso database — done.**
