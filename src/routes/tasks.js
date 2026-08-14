@@ -279,6 +279,13 @@ async function closeOpenSession(taskId, endTime = null) {
   // A clock skew or a backdated finish must never produce a negative interval.
   if (new Date(end) < new Date(open.start_time)) end = open.start_time;
   await run('UPDATE sessions SET end_time = ? WHERE id = ?', [end, open.id]);
+  // An exercise set hangs off the session, so pausing or finishing a workout
+  // from an ordinary task page has to close a set left running - otherwise it
+  // stays open forever and counts up against a session that already ended.
+  await run(
+    'UPDATE exercise_sets SET end_time = ? WHERE session_id = ? AND end_time IS NULL',
+    [end, open.id],
+  );
 }
 
 /** Attaches the raw session log to already-decorated tasks. */

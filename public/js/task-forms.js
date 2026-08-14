@@ -1,5 +1,6 @@
 /** The dialogs shared by the Upcoming, Progress and Finished pages. */
-import { createTask, updateTask, deleteTask, finishTask } from './api.js';
+import { createTask, updateTask, deleteTask, finishTask, getWorkout } from './api.js';
+import { renderSetLog } from './exercise-sets.js';
 import {
   formatCompact,
   formatDateTime,
@@ -117,6 +118,13 @@ export function openDetailsModal({ task, onSaved }) {
     row('Sessions', String(task.session_count));
     body.append(summary);
 
+    // A workout is an ordinary task, so it lands here like any other - but the
+    // interesting part is its sets, not its note. Detected by the category's
+    // is_exercise flag rather than the name, so renaming the category is safe.
+    if (task.category?.is_exercise) {
+      body.append(exerciseSection(task));
+    }
+
     const noteInput = textarea(
       task.finish_note ?? '',
       'What was done, how, and any special reason.',
@@ -136,6 +144,51 @@ export function openDetailsModal({ task, onSaved }) {
       ),
     );
   });
+}
+
+/**
+ * The set breakdown for a workout, loaded on demand. Returns immediately with a
+ * placeholder and fills itself in, so the modal never waits on the request.
+ */
+function exerciseSection(task) {
+  const section = document.createElement('div');
+  const heading = document.createElement('h3');
+  heading.className = 'section-title';
+  heading.textContent = 'Workout';
+  const slot = document.createElement('div');
+  slot.className = 'hint';
+  slot.textContent = 'Loading sets…';
+  section.append(heading, slot);
+
+  getWorkout(task.id)
+    .then((workout) => {
+      const parts = document.createDocumentFragment();
+
+      const row = (label, value) => {
+        const line = document.createElement('div');
+        line.className = 'detail-row';
+        const left = document.createElement('span');
+        left.textContent = label;
+        const right = document.createElement('span');
+        right.textContent = value;
+        line.append(left, right);
+        parts.append(line);
+      };
+      row('Sets', String(workout.sets.length));
+      row('Time under load', formatCompact(workout.set_seconds ?? 0));
+
+      const names = [...new Set((workout.type_groups ?? []).map((g) => g.type_name ?? 'Untyped'))];
+      if (names.length) row('Exercises', names.join(' · '));
+
+      parts.append(renderSetLog(workout, { emptyMessage: 'No sets were recorded.' }));
+      slot.replaceWith(parts);
+    })
+    .catch((error) => {
+      slot.classList.add('form-error');
+      slot.textContent = `Could not load the sets: ${error.message}`;
+    });
+
+  return section;
 }
 
 /** Finish: the detail-entry modal that moves a task out of Progress. */

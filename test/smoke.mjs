@@ -399,6 +399,56 @@ check(
   typeList.data.every((t) => t.type_name !== null && t.type_name !== ''),
 );
 
+/* ---------------------------- a workout survives pause/resume elsewhere */
+
+// Pausing a workout from the Progress page closes its session; resuming opens
+// a new one. The sets recorded before that must stay visible, keep climbing in
+// number, and keep their type.
+const beforePause = await api('GET', `/api/exercise/workouts/${workoutId}`);
+const setsBeforePause = beforePause.data.sets.length;
+const typeBeforePause = beforePause.data.current_type;
+
+await api('POST', `/api/exercise/workouts/${workoutId}/sets/stop`);
+await api('POST', `/api/tasks/${workoutId}/pause`);
+const whilePaused = await api('GET', `/api/exercise/workouts/${workoutId}`);
+check(
+  'sets stay visible after pausing from the Progress page',
+  whilePaused.data.sets.length === setsBeforePause,
+  `${whilePaused.data.sets.length} vs ${setsBeforePause}`,
+);
+
+await api('POST', `/api/tasks/${workoutId}/resume`);
+const afterResume = await api('GET', `/api/exercise/workouts/${workoutId}`);
+check(
+  'a second session does not hide the earlier sets',
+  afterResume.data.sets.length === setsBeforePause && afterResume.data.session_count === 2,
+  `sets=${afterResume.data.sets.length} sessions=${afterResume.data.session_count}`,
+);
+check('type carries across the session boundary', afterResume.data.current_type === typeBeforePause);
+check(
+  'total time spans every session, matching the task elapsed time',
+  afterResume.data.total_seconds === afterResume.data.task.elapsed_seconds,
+);
+
+const afterBoundary = await api('POST', `/api/exercise/workouts/${workoutId}/sets/start`);
+const newest = afterBoundary.data.sets[afterBoundary.data.sets.length - 1];
+check(
+  'set numbering keeps climbing across sessions',
+  newest.set_index === Math.max(...afterBoundary.data.sets.map((s) => s.set_index)) &&
+    newest.set_index > setsBeforePause,
+  `set_index=${newest.set_index}`,
+);
+
+// Pausing with a set running must close the set, not leave it open forever
+// against a session that has already ended.
+await api('POST', `/api/tasks/${workoutId}/pause`);
+const afterMidSetPause = await api('GET', `/api/exercise/workouts/${workoutId}`);
+check(
+  'pausing mid-set closes the running set',
+  afterMidSetPause.data.sets.every((set) => !set.is_running),
+);
+await api('POST', `/api/tasks/${workoutId}/resume`);
+
 const finishedWorkout = await api('POST', `/api/exercise/workouts/${workoutId}/finish`, {
   finish_note: 'Squats 5x5',
 });

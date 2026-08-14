@@ -19,6 +19,7 @@ import {
   deleteWorkout,
 } from '../api.js';
 import { formatClock, formatCompact, formatDateTime } from '../format.js';
+import { renderSetLog, typeLabel } from '../exercise-sets.js';
 import { toast, openModal, field, input, textarea, modalActions } from '../modal.js';
 import {
   support,
@@ -81,8 +82,6 @@ function savePendingType(workoutId, type) {
   }
 }
 
-const UNTYPED_LABEL = 'Untyped';
-const typeLabel = (name) => (name === null || name === undefined ? UNTYPED_LABEL : name);
 
 function loadRest() {
   try {
@@ -415,68 +414,8 @@ function detailRow(label, value) {
   return row;
 }
 
-/**
- * The set log, grouped into consecutive runs of the same exercise. Used by both
- * the live workout and the Details view, so the two always match.
- * Sets are numbered within their group, which is how you read a workout.
- */
-function setList(data) {
-  if (data.sets.length === 0) {
-    const empty = el('div', 'empty');
-    empty.append(el('span', 'big', '—'));
-    empty.append(document.createTextNode('No sets yet. Press Start Set to begin one.'));
-    return empty;
-  }
-
-  const wrap = el('div', 'type-groups');
-  for (const group of data.type_groups ?? [{ type_name: null, sets: data.sets, set_count: data.sets.length, total_seconds: 0 }]) {
-    const block = el('div', 'type-group');
-
-    const header = el('div', 'type-group-head');
-    const name = el('span', 'type-group-name', typeLabel(group.type_name));
-    if (group.type_name === null) name.classList.add('untyped');
-    header.append(name);
-    header.append(
-      el(
-        'span',
-        'type-group-meta',
-        `${group.set_count} set${group.set_count === 1 ? '' : 's'} · ${formatCompact(group.total_seconds)}`,
-      ),
-    );
-    block.append(header);
-
-    const list = el('div', 'set-list');
-    group.sets.forEach((set, indexInGroup) => {
-      const row = el('div', 'set-row');
-      if (set.is_running) row.classList.add('running');
-      row.append(el('span', 'set-index', `#${indexInGroup + 1}`));
-
-      const duration = el('span', 'set-duration');
-      if (set.is_running) {
-        duration.dataset.role = 'live-set';
-        duration.dataset.start = set.start_time;
-      } else {
-        duration.textContent = formatClock(set.duration_seconds);
-      }
-      row.append(duration);
-
-      const rest = el('span', 'set-rest');
-      if (set.rest_running) {
-        rest.dataset.role = 'live-rest';
-        rest.dataset.start = set.end_time;
-      } else if (set.rest_after_seconds !== null) {
-        rest.textContent = `rest ${formatCompact(set.rest_after_seconds)}`;
-      } else {
-        rest.textContent = 'running';
-      }
-      row.append(rest);
-      list.append(row);
-    });
-    block.append(list);
-    wrap.append(block);
-  }
-  return wrap;
-}
+const setList = (data) =>
+  renderSetLog(data, { emptyMessage: 'No sets yet. Press Start Set to begin one.' });
 
 function historyList(history) {
   if (history.length === 0) {

@@ -91,34 +91,56 @@ async function loadWorkout(taskId) {
   const task = await getTask(taskId);
   if (!task) return null;
 
-  // The Total-time session: the open one, else the most recent.
-  const session = await one(
-    `SELECT * FROM sessions WHERE task_id = ?
-      ORDER BY (end_time IS NULL) DESC, start_time DESC LIMIT 1`,
-    [taskId],
-  );
-  if (!session) return { task, session: null, sets: [], total_seconds: 0 };
+  // A workout spans EVERY session of its task, not just the latest one. Pausing
+  // a workout from the Progress page closes its session and resuming opens a
+  // new one, so reading a single session would hide every set recorded before
+  // the pause.
+  const sessions = await all('SELECT * FROM sessions WHERE task_id = ? ORDER BY start_time', [
+    taskId,
+  ]);
+  if (sessions.length === 0) {
+    return {
+      task,
+      session: null,
+      sets: [],
+      type_groups: [],
+      current_type: null,
+      total_seconds: 0,
+      set_seconds: 0,
+    };
+  }
+
+  const open = sessions.find((session) => session.end_time === null);
+  const latest = open ?? sessions[sessions.length - 1];
 
   const rows = await all(
-    'SELECT * FROM exercise_sets WHERE session_id = ? ORDER BY set_index',
-    [session.id],
+    `SELECT es.* FROM exercise_sets es
+       JOIN sessions s ON s.id = es.session_id
+      WHERE s.task_id = ?
+      ORDER BY es.start_time`,
+    [taskId],
   );
-  const sets = shapeSets(rows, session.end_time);
+  // Sets run to the end of the workout: the last session's end, or "now" while
+  // one is still open.
+  const workoutEnd = open ? null : sessions[sessions.length - 1].end_time;
+  const sets = shapeSets(rows, workoutEnd);
 
   return {
     task,
     session: {
-      id: Number(session.id),
-      start_time: session.start_time,
-      end_time: session.end_time,
-      is_running: session.end_time === null,
+      id: Number(latest.id),
+      start_time: sessions[0].start_time,
+      end_time: latest.end_time,
+      is_running: Boolean(open),
     },
+    session_count: sessions.length,
     sets,
     type_groups: groupSetsByType(sets),
     // What the next set inherits if the user does not pick a new type.
     current_type: sets.length ? sets[sets.length - 1].type_name : null,
-    // Total time is the session, exactly as for any other task.
-    total_seconds: secondsBetween(session.start_time, session.end_time),
+    // Total time is the task's tracked time - the sum of all its sessions,
+    // which is what every other page shows for this task too.
+    total_seconds: task.elapsed_seconds,
     set_seconds: sets.reduce((sum, set) => sum + set.duration_seconds, 0),
   };
 }
@@ -231,21 +253,29 @@ router.post(
     if (!session) throw conflict('This workout is not running');
     if (await openSet(session.id)) throw conflict('A set is already running');
 
+    // Look across the whole task, not just this session: a pause/resume from
+    // the Progress page starts a new session mid-workout, and the type should
+    // still carry forward and the numbering keep climbing.
     const previous = await one(
-      'SELECT type_name FROM exercise_sets WHERE session_id = ? ORDER BY set_index DESC LIMIT 1',
-      [session.id],
+      `SELECT es.type_name FROM exercise_sets es
+         JOIN sessions s ON s.id = es.session_id
+        WHERE s.task_id = ?
+        ORDER BY es.start_time DESC LIMIT 1`,
+      [id],
     );
     const body = req.body ?? {};
     const provided = optionalString(body, 'type_name', { max: 100 });
     const typeName = provided === undefined ? (previous?.type_name ?? null) : provided;
 
-    const [{ count }] = await all(
-      'SELECT COUNT(*) AS count FROM exercise_sets WHERE session_id = ?',
-      [session.id],
+    const [{ highest }] = await all(
+      `SELECT COALESCE(MAX(es.set_index), 0) AS highest FROM exercise_sets es
+         JOIN sessions s ON s.id = es.session_id
+        WHERE s.task_id = ?`,
+      [id],
     );
     await run(
       'INSERT INTO exercise_sets (session_id, set_index, start_time, type_name) VALUES (?, ?, ?, ?)',
-      [session.id, Number(count) + 1, nowIso(), typeName],
+      [session.id, Number(highest) + 1, nowIso(), typeName],
     );
     res.json(await loadWorkout(id));
   }),

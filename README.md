@@ -36,7 +36,7 @@ categories, and serves on <http://localhost:3000>.
 npm run smoke
 ```
 
-77 end-to-end checks against a throwaway database: full lifecycle, session
+83 end-to-end checks against a throwaway database: full lifecycle, session
 editing, overtime detection, calendar aggregation, sort reversibility, the
 exercise stopwatch flow, and the derived fields the browser depends on.
 
@@ -52,6 +52,7 @@ committed is exactly what runs. Mobile-first; the same layout widens on desktop.
 | `js/task-actions.js` | the action sets, so a task behaves the same on every page |
 | `js/task-forms.js` | new/edit, details, finish and delete dialogs |
 | `js/pie.js` | SVG pie chart + breakdown bars, hand-drawn, patterned |
+| `js/exercise-sets.js` | the grouped set log, shared by the Exercise page and Details |
 | `js/alarm.js` | rest alarm: wake lock, Web Audio, vibration, notifications |
 | `js/format.js` | UTC → local rendering, `90m` / `1h30m` duration parsing |
 | `js/color.js` | category hue + per-task lightness; golden-angle task hues |
@@ -184,6 +185,15 @@ appears on Overview and in the calendar totals like any other task, and only the
 detail view knows about sets. **Rest is not stored**: the rest after a set is the
 gap to the next set's start (or to the end of the session), derived on read like
 every other duration here.
+
+A workout spans **every** session of its task, not just the latest. Pausing one
+from the Progress page closes its session and resuming opens a new one, so
+reading a single session would hide every set recorded before the pause. Its
+Total time is the task's tracked time, which is what the other pages show for it
+too. Because a workout is an ordinary task, its Details modal on Progress /
+Finished / Overview renders the same grouped set log as the Exercise page —
+keyed off the category's `is_exercise` flag, not its name, so renaming the
+category is safe.
 
 `exercise_sets.type_name` records which exercise a set belongs to. It carries
 forward from the previous set unless you start a new type, so a run of sets on
