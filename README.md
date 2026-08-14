@@ -163,9 +163,12 @@ a bad key and an outage return a message naming the cause, and the pasted text
 stays in the box so you can retry. None of it touches the rest of the app; the
 suite asserts that tasks can still be created while AI is off.
 
-`GEMINI_MODEL` overrides the model (default `gemini-2.5-flash`). Model ids get
-retired, so on a 404 the server asks the API which models the key can actually
-use and retries once with a flash one.
+`GEMINI_MODEL` overrides the model. The default is the **`gemini-flash-latest`
+alias**, not a pinned version, because Google retires numbered ones —
+`gemini-2.5-flash` is already refused for new keys ("no longer available to new
+users") while `ListModels` still cheerfully advertises it. On a 404 the server
+asks which models the key can use and retries, skipping the one that just
+failed, ignoring image/tts/robotics/research models, and preferring aliases.
 
 ## Installing it on a phone
 

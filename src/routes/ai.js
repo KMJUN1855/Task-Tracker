@@ -16,7 +16,12 @@ import { wrap, badRequest, HttpError, requireString, parseTimeZone } from '../ht
 const router = Router();
 
 const API_ROOT = 'https://generativelanguage.googleapis.com/v1beta';
-const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+/**
+ * An alias rather than a pinned version: Google retires numbered models (2.5-flash
+ * is already refused for new keys even though ListModels still advertises it),
+ * and the alias always points at the current flash.
+ */
+const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-latest';
 const MAX_INPUT_CHARS = 8000;
 const MAX_ITEMS = 50;
 const TIMEOUT_MS = 30000;
@@ -136,19 +141,39 @@ async function generate(key, model, prompt) {
 }
 
 /**
- * Model ids get retired, so a 404 is not fatal: ask the API which models this
- * key can actually use and retry once with a flash one.
+ * Models that exist but cannot do what we want: images, audio, robotics, and
+ * the long-running research ones. ListModels advertises all of them.
  */
-async function discoverModel(key) {
+const NOT_TEXT_CHAT =
+  /image|tts|audio|robotics|lyria|veo|imagen|embedding|computer-use|nano-banana|deep-research|omni/;
+
+/**
+ * A 404 is not fatal: ask which models this key can actually use and retry.
+ * Note that ListModels lies by omission - it still lists models that
+ * generateContent refuses ("no longer available to new users") - so the model
+ * that just failed is excluded, and aliases are preferred over pinned versions
+ * because they keep working as versions are retired.
+ */
+async function discoverModel(key, failedModel) {
   const res = await fetch(`${API_ROOT}/models`, { headers: { 'x-goog-api-key': key } });
   if (!res.ok) return null;
   const body = await res.json();
-  const usable = (body.models ?? []).filter((m) =>
-    (m.supportedGenerationMethods ?? []).includes('generateContent'),
-  );
+
   const name = (m) => String(m.name).replace(/^models\//, '');
-  const flash = usable.find((m) => /flash/.test(name(m)) && !/vision|thinking/.test(name(m)));
-  return flash ? name(flash) : usable[0] ? name(usable[0]) : null;
+  const usable = (body.models ?? [])
+    .filter((m) => (m.supportedGenerationMethods ?? []).includes('generateContent'))
+    .map(name)
+    .filter((n) => n !== failedModel && !NOT_TEXT_CHAT.test(n));
+
+  return (
+    usable.find((n) => n === 'gemini-flash-latest') ??
+    usable.find((n) => /flash.*-latest$/.test(n)) ??
+    usable.find((n) => /-latest$/.test(n)) ??
+    usable.find((n) => /flash/.test(n) && !/preview/.test(n)) ??
+    usable.find((n) => /flash/.test(n)) ??
+    usable[0] ??
+    null
+  );
 }
 
 async function callGemini(key, prompt) {
@@ -156,8 +181,8 @@ async function callGemini(key, prompt) {
   let res = await generate(key, model, prompt);
 
   if (res.status === 404) {
-    const discovered = await discoverModel(key);
-    if (discovered && discovered !== model) {
+    const discovered = await discoverModel(key, model);
+    if (discovered) {
       model = discovered;
       res = await generate(key, model, prompt);
     }
