@@ -125,24 +125,72 @@ export function openDetailsModal({ task, onSaved }) {
       body.append(exerciseSection(task));
     }
 
-    const noteInput = textarea(
-      task.finish_note ?? '',
-      'What was done, how, and any special reason.',
-    );
-    body.append(field('Notes', noteInput));
+    // Notes are read-only until you ask to edit them. Opening Details should
+    // never put you in a text field you did not ask for, and closing without
+    // pressing Edit must leave the note exactly as it was.
+    const original = task.finish_note ?? '';
 
-    body.append(
-      modalActions(
-        'Save notes',
-        async () => {
-          await updateTask(task.id, { finish_note: noteInput.value });
-          close();
-          toast('Notes saved');
-          await onSaved();
-        },
-        close,
-      ),
-    );
+    const notesLabel = document.createElement('div');
+    notesLabel.className = 'field-label';
+    notesLabel.textContent = 'Notes';
+
+    const slot = document.createElement('div');
+    // Plain container: each mode supplies its own .modal-actions row inside it.
+    const buttons = document.createElement('div');
+    body.append(notesLabel, slot, buttons);
+
+    const showReadOnly = () => {
+      const view = document.createElement('div');
+      view.className = 'note-view';
+      if (original.trim()) {
+        view.textContent = original;
+      } else {
+        view.classList.add('note-empty');
+        view.textContent = 'No notes yet.';
+      }
+      slot.replaceChildren(view);
+
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'button';
+      edit.textContent = '✎ Edit notes';
+      edit.addEventListener('click', showEditor);
+
+      const closeButton = document.createElement('button');
+      closeButton.type = 'button';
+      closeButton.className = 'button ghost';
+      closeButton.textContent = 'Close';
+      closeButton.addEventListener('click', close);
+
+      const row = document.createElement('div');
+      row.className = 'modal-actions';
+      row.append(closeButton, edit);
+      buttons.replaceChildren(row);
+    };
+
+    const showEditor = () => {
+      const noteInput = textarea(original, 'What was done, how, and any special reason.');
+      slot.replaceChildren(noteInput);
+      // Focusing here is wanted - the user just asked to edit.
+      noteInput.focus();
+      noteInput.setSelectionRange(noteInput.value.length, noteInput.value.length);
+
+      buttons.replaceChildren(
+        modalActions(
+          'Save notes',
+          async () => {
+            await updateTask(task.id, { finish_note: noteInput.value });
+            close();
+            toast('Notes saved');
+            await onSaved();
+          },
+          // Cancel discards the edit and returns to the read-only view.
+          showReadOnly,
+        ),
+      );
+    };
+
+    showReadOnly();
   });
 }
 

@@ -78,8 +78,8 @@ is spelled out next to it.
 * **Upcoming** — due-date order with a reverse toggle; overdue pinned to the top
   regardless; Expected/Max on every card; Start, Edit, Delete; New task form.
 * **Progress** — started tasks only, running or paused, with the progress bar at
-  `elapsed / max_time`; Pause/Resume, Details (edit notes), Finish (note modal).
-  Several tasks can run at once.
+  `elapsed / max_time`; Pause/Resume, Details, Finish (note modal). Several tasks
+  can run at once.
 * **Finished** — five sort options, each reversible: finished date, due date,
   start date, overtime by max time, overtime by due date. Overruns keep the red
   border and the overage figure. Details, Reopen, Delete.
@@ -185,6 +185,11 @@ appears on Overview and in the calendar totals like any other task, and only the
 detail view knows about sets. **Rest is not stored**: the rest after a set is the
 gap to the next set's start (or to the end of the session), derived on read like
 every other duration here.
+
+**Details opens read-only.** Notes are shown as text, and only ✎ Edit notes turns
+them into a field — opening Details should never drop you into a text box you did
+not ask for. Cancel discards the edit, and closing without editing writes
+nothing. Only Save notes issues a request.
 
 A workout spans **every** session of its task, not just the latest. Pausing one
 from the Progress page closes its session and resuming opens a new one, so

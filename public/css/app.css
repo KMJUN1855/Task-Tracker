@@ -730,6 +730,27 @@ textarea { min-height: 7rem; resize: vertical; line-height: 1.5; }
 }
 .modal-actions .button { flex: 1; }
 
+.field-label {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin: 0.8rem 0 0.3rem;
+}
+
+/* Notes as shown before you ask to edit them. */
+.note-view {
+  padding: 0.6rem 0.7rem;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  max-height: 14rem;
+  overflow-y: auto;
+}
+.note-view.note-empty { color: var(--text-dim); font-style: italic; }
+
 .form-error {
   color: var(--over);
   font-size: 0.85rem;
