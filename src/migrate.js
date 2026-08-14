@@ -25,20 +25,54 @@ const DEFAULT_CATEGORIES = [
 /**
  * `exercise_sets.rest_after` was created in step 1 and never written to - rest
  * is derived from the gap between adjacent sets instead. CREATE TABLE IF NOT
- * EXISTS will not remove it from a database that already has the table, so drop
- * it here. Guarded on the table being empty, so it can never discard real data.
+ * EXISTS will not remove it from a database that already has the table, so it
+ * has to be removed here.
+ *
+ * NOT with ALTER TABLE ... DROP COLUMN. That rewrites the stored CREATE TABLE
+ * text by excising the column's tokens, and rest_after was the last column with
+ * a trailing `--` comment after it, which leaves `end_time TEXT,` followed by a
+ * comment and then `)` - a dangling comma, reported as "incomplete input".
+ * (Nothing to do with Turso: it is the stored DDL text that decides this, and
+ * plain SQLite fails identically on the same text.)
+ *
+ * Rebuilding the table is immune to how the original was written, and keeps
+ * existing rows. The replacement DDL deliberately carries no inline comments,
+ * so a future column drop cannot hit the same trap.
  */
 async function dropLegacyRestAfter(log) {
   const columns = await all('PRAGMA table_info(exercise_sets)');
   if (!columns.some((column) => column.name === 'rest_after')) return;
 
-  const [{ count }] = await all('SELECT COUNT(*) AS count FROM exercise_sets');
-  if (Number(count) > 0) {
-    log(`exercise_sets has ${count} rows; leaving the unused rest_after column in place`);
+  // The column should be entirely NULL - nothing ever wrote it. If that is
+  // somehow untrue, keep the column rather than discard the values.
+  const [{ populated }] = await all(
+    'SELECT COUNT(*) AS populated FROM exercise_sets WHERE rest_after IS NOT NULL',
+  );
+  if (Number(populated) > 0) {
+    log(`exercise_sets.rest_after holds ${populated} non-null value(s); leaving the column alone`);
     return;
   }
-  await run('ALTER TABLE exercise_sets DROP COLUMN rest_after');
-  log('dropped unused exercise_sets.rest_after (rest is derived from timestamps)');
+
+  const [{ total }] = await all('SELECT COUNT(*) AS total FROM exercise_sets');
+  await db.batch(
+    [
+      `CREATE TABLE exercise_sets_new (
+         id         INTEGER PRIMARY KEY AUTOINCREMENT,
+         session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+         set_index  INTEGER NOT NULL,
+         start_time TEXT    NOT NULL,
+         end_time   TEXT
+       )`,
+      `INSERT INTO exercise_sets_new (id, session_id, set_index, start_time, end_time)
+         SELECT id, session_id, set_index, start_time, end_time FROM exercise_sets`,
+      'DROP TABLE exercise_sets',
+      'ALTER TABLE exercise_sets_new RENAME TO exercise_sets',
+      // The index went with the old table; schema.sql already ran, so recreate it.
+      'CREATE INDEX IF NOT EXISTS idx_exercise_sets_session ON exercise_sets(session_id)',
+    ],
+    'write',
+  );
+  log(`rebuilt exercise_sets without rest_after, ${total} row(s) preserved`);
 }
 
 export async function migrate({ log = () => {} } = {}) {
