@@ -67,3 +67,14 @@ export const statsDaily = (from, to) =>
 
 export const statsDay = (day) =>
   api.get(`/api/stats/day/${day}?tz=${encodeURIComponent(localTimeZone())}`);
+
+/* -------------------------------------------------------------- exercise */
+
+export const activeWorkout = () => api.get('/api/exercise/active');
+export const listWorkouts = (limit = 20) => api.get(`/api/exercise/workouts?limit=${limit}`);
+export const startWorkout = (name) => api.post('/api/exercise/workouts', { name });
+export const startSet = (id) => api.post(`/api/exercise/workouts/${id}/sets/start`);
+export const stopSet = (id) => api.post(`/api/exercise/workouts/${id}/sets/stop`);
+export const finishWorkout = (id, note) =>
+  api.post(`/api/exercise/workouts/${id}/finish`, { finish_note: note });
+export const deleteWorkout = (id) => api.del(`/api/exercise/workouts/${id}`);

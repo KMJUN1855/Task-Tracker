@@ -1,8 +1,9 @@
 # Task Tracker
 
 Personal time/task tracking, reachable from both a computer and a phone browser.
-Steps 1-3 of the implementation order are done: **server + DB schema + API**, the
-**Upcoming / Progress / Finished** pages, and **Overview + Calendar + pie chart**.
+Steps 1–4 of the implementation order are done: **server + DB schema + API**, the
+**Upcoming / Progress / Finished** pages, **Overview + Calendar + pie chart**, and
+the **Exercise** stopwatch. Only the Phase B move to a local server is left.
 
 * **Runtime** — Node.js 20+, Express, `@libsql/client`
 * **Database** — SQLite dialect. The same schema and queries run on Turso
@@ -35,9 +36,9 @@ categories, and serves on <http://localhost:3000>.
 npm run smoke
 ```
 
-53 end-to-end checks against a throwaway database: full lifecycle, session
-editing, overtime detection, calendar aggregation, sort reversibility, and the
-derived fields the browser depends on.
+69 end-to-end checks against a throwaway database: full lifecycle, session
+editing, overtime detection, calendar aggregation, sort reversibility, the
+exercise stopwatch flow, and the derived fields the browser depends on.
 
 ## Frontend
 
@@ -51,9 +52,10 @@ committed is exactly what runs. Mobile-first; the same layout widens on desktop.
 | `js/task-actions.js` | the action sets, so a task behaves the same on every page |
 | `js/task-forms.js` | new/edit, details, finish and delete dialogs |
 | `js/pie.js` | SVG pie chart + breakdown bars, hand-drawn, patterned |
+| `js/alarm.js` | rest alarm: wake lock, Web Audio, vibration, notifications |
 | `js/format.js` | UTC → local rendering, `90m` / `1h30m` duration parsing |
 | `js/color.js` | category hue + per-task lightness; golden-angle task hues |
-| `js/pages/*.js` | Overview, Upcoming, Progress, Finished, Calendar |
+| `js/pages/*.js` | Overview, Upcoming, Progress, Finished, Calendar, Exercise |
 
 **The card recomputes, it never accumulates.** It keeps `closed_seconds` and
 `open_session_start` from the API and derives elapsed time on every tick, so a
@@ -114,6 +116,13 @@ tooltip a phone would not show. Tasks may run concurrently, so tracked time can
 exceed the window being measured; there is simply no Untracked slice then. The
 breakdown bars below the pie stay a per-task chart and never list Untracked.
 
+* **Exercise** — the stopwatch flow, separate from the standard task flow:
+  Start Total → Start Set → Stop Set (rest begins) → Start Set → … → Finish
+  Total. Total time sits above the current set/rest clock, which is the largest
+  thing on the page. Rest presets are 1 / 1.5 / 2 / 3 / 5 min, and the next set
+  never starts by itself — the alarm only says it is time. See the alarm section
+  below for what that alarm can and cannot do.
+
 The month's daily stats already carry each day's by-task and by-category split,
 so selecting a day costs one request, not two. Sessions that run past midnight
 are cut at local midnight by the API and counted against both days.
@@ -164,9 +173,12 @@ Two rules are enforced throughout:
 A partial unique index guarantees at most one *open* session per task, while any
 number of *different* tasks may run at the same time.
 
-`exercise_sets` is created now but unused until step 4: a workout is an ordinary
-task in the Exercise category, its session is the Total time, and each set hangs
-off that session — so the generic elapsed-time rules keep working untouched.
+A workout is an ordinary task in the Exercise category, its session is the Total
+time, and each `exercise_sets` row hangs off that session — so a workout still
+appears on Overview and in the calendar totals like any other task, and only the
+detail view knows about sets. **Rest is not stored**: the rest after a set is the
+gap to the next set's start (or to the end of the session), derived on read like
+every other duration here.
 
 ## API
 
@@ -216,6 +228,13 @@ colour is never the only signal (accessibility requirement).
 | DELETE | `/api/sessions/:id` | drop a mistaken interval |
 | GET | `/api/stats/daily` | `?from=YYYY-MM-DD&to=…&tz=…` — calendar + pie data |
 | GET | `/api/stats/day/:day` | `?tz=…` — what was finished that day, and how far from due |
+| GET | `/api/exercise/active` | the workout in progress, or `null` |
+| GET | `/api/exercise/workouts` | finished workouts, `?limit=` |
+| POST | `/api/exercise/workouts` | `{name?}` — Start Total |
+| POST | `/api/exercise/workouts/:id/sets/start` | Start Set |
+| POST | `/api/exercise/workouts/:id/sets/stop` | Stop Set; rest begins implicitly |
+| POST | `/api/exercise/workouts/:id/finish` | `{finish_note?}` — Finish Total |
+| DELETE | `/api/exercise/workouts/:id` | drop a mis-started workout |
 
 **Task list query** — `?status=` (comma separated), `?category_id=`,
 `?due_before=` / `?due_after=`, `?finished_after=` / `?finished_before=`,
@@ -243,7 +262,48 @@ days so the calendar grid needs no gap filling.
 | Overview | the three calls above, `?due_before=` for the week/month filter |
 | Calendar | `GET /api/stats/daily?from=&to=&tz=` per month, then `GET /api/stats/day/:day?tz=` per selected day |
 
+## The rest alarm, and what a browser can actually do
+
+Worth being exact about, because it shapes the design.
+
+**A web page cannot schedule an alarm the operating system will fire later.**
+Verified rather than assumed: the Notification Triggers API (`showTrigger` +
+`TimestampTrigger`), the one API that would have allowed it from the client, is
+absent (`'showTrigger' in Notification.prototype === false`). A Service Worker
+cannot hold a timer across suspension either. The only reliable wake-up is a
+server Push — which needs a server that is awake, and the Render free instance
+sleeps after ~15 minutes idle.
+
+So the design is:
+
+1. **Screen Wake Lock while a workout is running** — the actual fix. The screen
+   stays on, the page stays alive, the alarm fires on time. Re-acquired on every
+   return to visibility, since the OS drops it whenever the tab is hidden.
+2. **The deadline is an absolute timestamp**, never a countdown integer. If the
+   page is suspended and resumed, the remaining time is still right, and an
+   alarm that came due while away fires on the first tick back — the caption
+   says how late it is (`Rest over by 4m`).
+3. **Sound + vibration + notification**, each used only where the platform
+   offers it. The page states which channels are live rather than implying it
+   works everywhere.
+
+Known limits, in order of how likely you are to hit them:
+
+* If the screen locks or you switch apps and the browser suspends the page, the
+  alarm **is late** — it fires when you come back. On iOS this happens almost
+  immediately on lock; Android throttles but is more forgiving.
+* Audio cannot exist before the user has interacted with the page, so a page
+  loaded fresh into an already-overdue rest has no sound until the first tap.
+  Any tap anywhere arms it (audio only — the notification prompt stays on the
+  workout buttons, where the intent is obvious). The visual state is always
+  there regardless.
+* Notifications only appear while the page is still running; they cannot wake a
+  suspended one.
+
+In practice: keep the phone unlocked on the Exercise page and the wake lock
+handles it. For a fully reliable background alarm you want your phone's own
+clock app — no browser can promise this.
+
 ## Next steps
 
-4. Exercise page (stopwatch; `exercise_sets` table and its endpoints)
 5. Phase B — local server or Raspberry Pi + Tailscale, verify phone access

@@ -301,6 +301,78 @@ check(
 const badTz = await api('GET', '/api/stats/daily?tz=Mars/Olympus');
 check('unknown timezone rejected', badTz.status === 400);
 
+/* -------------------------------------------------------------- exercise */
+
+const noWorkout = await api('GET', '/api/exercise/active');
+check('no workout active initially', noWorkout.data.workout === null);
+
+const workout = await api('POST', '/api/exercise/workouts', { name: 'Leg day' });
+check('start total creates the workout', workout.status === 201 && workout.data.session.is_running);
+check(
+  'workout is an ordinary task in the Exercise category',
+  workout.data.task.category.is_exercise === true && workout.data.task.status === 'in_progress',
+);
+const workoutId = workout.data.task.id;
+
+const secondWorkout = await api('POST', '/api/exercise/workouts', { name: 'Nope' });
+check('only one workout at a time', secondWorkout.status === 409);
+
+await api('POST', `/api/exercise/workouts/${workoutId}/sets/start`);
+const doubleSet = await api('POST', `/api/exercise/workouts/${workoutId}/sets/start`);
+check('cannot start two sets at once', doubleSet.status === 409);
+
+const stopped = await api('POST', `/api/exercise/workouts/${workoutId}/sets/stop`);
+check('stop set records it', stopped.data.sets.length === 1 && !stopped.data.sets[0].is_running);
+check(
+  'rest starts running after the set, with no auto-start of the next one',
+  stopped.data.sets[0].rest_running === true && stopped.data.sets.every((s) => !s.is_running),
+);
+
+const noSet = await api('POST', `/api/exercise/workouts/${workoutId}/sets/stop`);
+check('cannot stop a set that is not running', noSet.status === 409);
+
+// Rest is derived from the gap between sets, so back-dating a set's timestamps
+// through the sessions API must move it - proving nothing is stored.
+const workoutDetail = await api('GET', `/api/exercise/workouts/${workoutId}`);
+const sessionId = workoutDetail.data.session.id;
+await api('PATCH', `/api/sessions/${sessionId}`, { start_time: iso(-600) });
+
+await api('POST', `/api/exercise/workouts/${workoutId}/sets/start`);
+const twoSets = await api('GET', `/api/exercise/workouts/${workoutId}`);
+check(
+  'rest_after is the gap to the next set, computed not stored',
+  twoSets.data.sets[0].rest_after_seconds >= 0 && twoSets.data.sets[0].rest_running === false,
+);
+check('the running set has no rest yet', twoSets.data.sets[1].rest_after_seconds === null);
+
+const finishedWorkout = await api('POST', `/api/exercise/workouts/${workoutId}/finish`, {
+  finish_note: 'Squats 5x5',
+});
+check(
+  'finish closes the workout and any running set',
+  finishedWorkout.data.task.status === 'finished' &&
+    finishedWorkout.data.sets.every((s) => !s.is_running),
+);
+check(
+  'total time is the session, so it matches the task elapsed time',
+  Math.abs(finishedWorkout.data.total_seconds - finishedWorkout.data.task.elapsed_seconds) <= 1,
+  `total=${finishedWorkout.data.total_seconds} elapsed=${finishedWorkout.data.task.elapsed_seconds}`,
+);
+check(
+  'time under load is the sum of the sets, not the total',
+  finishedWorkout.data.set_seconds <= finishedWorkout.data.total_seconds,
+);
+
+const clearedAfterFinish = await api('GET', '/api/exercise/active');
+check('no workout active after finishing', clearedAfterFinish.data.workout === null);
+
+const workoutHistory = await api('GET', '/api/exercise/workouts?limit=5');
+check('finished workout appears in history', workoutHistory.data.some((w) => w.task.id === workoutId));
+
+await api('DELETE', `/api/exercise/workouts/${workoutId}`);
+const setsGone = await api('GET', `/api/exercise/workouts/${workoutId}`);
+check('deleting a workout removes it', setsGone.status === 404);
+
 /* --------------------------------------------------------------- delete */
 
 const deleted = await api('DELETE', `/api/tasks/${overtimeTask.data.id}`);

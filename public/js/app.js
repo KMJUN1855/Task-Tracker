@@ -7,8 +7,9 @@ import * as upcoming from './pages/upcoming.js';
 import * as progress from './pages/progress.js';
 import * as finished from './pages/finished.js';
 import * as calendar from './pages/calendar.js';
+import * as exercise from './pages/exercise.js';
 
-const PAGES = { overview, upcoming, progress, finished, calendar };
+const PAGES = { overview, upcoming, progress, finished, calendar, exercise };
 const DEFAULT_PAGE = 'overview';
 
 const view = document.getElementById('view');
@@ -112,6 +113,8 @@ async function refreshBadges(skip) {
 // it never accumulates anything.
 setInterval(() => {
   tickCards();
+  // A page may expose its own per-second work (the exercise stopwatch does).
+  PAGES[currentPage()].tick?.();
   clock.textContent = new Date().toLocaleTimeString(undefined, {
     hour: '2-digit',
     minute: '2-digit',

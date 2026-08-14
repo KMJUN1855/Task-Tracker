@@ -50,14 +50,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_single_open
 
 -- Exercise detail. A workout is an ordinary task in the Exercise category; its
 -- session is the "Total time", and each set hangs off that session so the
--- generic elapsed-time rules keep working untouched. (Used from step 4 on.)
+-- generic elapsed-time rules keep working untouched.
+--
+-- Rest after a set is NOT stored: it is the gap to the next set's start (or to
+-- the end of the session for the last set), so it is derived on read like every
+-- other duration in this schema. Storing it would drift the moment a timestamp
+-- was corrected.
 CREATE TABLE IF NOT EXISTS exercise_sets (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   set_index  INTEGER NOT NULL,
   start_time TEXT    NOT NULL,                -- UTC
-  end_time   TEXT,                            -- UTC, NULL = set running
-  rest_after INTEGER                          -- seconds of rest after this set
+  end_time   TEXT                             -- UTC, NULL = set running
 );
 
 CREATE INDEX IF NOT EXISTS idx_exercise_sets_session ON exercise_sets(session_id);

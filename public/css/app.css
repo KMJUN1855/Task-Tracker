@@ -531,6 +531,82 @@ textarea { min-height: 7rem; resize: vertical; line-height: 1.5; }
 
 .pie-caption { text-align: center; margin: -0.4rem 0 0.9rem; }
 
+/* -------------------------------------------------------------- exercise */
+
+.start-card, .workout-card { border-left-width: 4px; }
+.workout-card.state-set  { border-left-color: var(--running); }
+.workout-card.state-rest { border-left-color: var(--paused); }
+
+.big-button { width: 100%; font-size: 1.05rem; font-weight: 650; margin-top: 0.5rem; }
+
+.total-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+.total-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+.total-time {
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The current set / rest clock is the biggest thing on the page. */
+.big-time {
+  font-size: clamp(3rem, 18vw, 4.5rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  margin-top: 0.1rem;
+  color: var(--text-dim);
+}
+.big-time.running  { color: var(--running); }
+.big-time.resting  { color: var(--paused); }
+.big-time.over     { color: var(--over); }
+
+.big-caption { font-size: 0.85rem; color: var(--text-dim); margin-bottom: 0.6rem; }
+
+.rest-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+  margin-bottom: 0.2rem;
+}
+.rest-bar > i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--paused);
+  transition: width 0.9s linear;
+}
+.rest-bar > i.over { background: var(--over); }
+
+.alarm-status { margin-top: 0.6rem; }
+
+.set-list { display: flex; flex-direction: column; gap: 2px; }
+.set-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.45rem 0.6rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+.set-row.running { border-color: var(--running); }
+.set-index { color: var(--text-dim); min-width: 2.2rem; font-variant-numeric: tabular-nums; }
+.set-duration { font-weight: 650; font-variant-numeric: tabular-nums; }
+.set-rest { margin-left: auto; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+
 .breakdown { display: flex; flex-direction: column; gap: 0.55rem; margin-bottom: 0.5rem; }
 
 .breakdown-head {

@@ -22,10 +22,30 @@ const DEFAULT_CATEGORIES = [
   { name: 'Personal/other', hue: 324 },
 ];
 
+/**
+ * `exercise_sets.rest_after` was created in step 1 and never written to - rest
+ * is derived from the gap between adjacent sets instead. CREATE TABLE IF NOT
+ * EXISTS will not remove it from a database that already has the table, so drop
+ * it here. Guarded on the table being empty, so it can never discard real data.
+ */
+async function dropLegacyRestAfter(log) {
+  const columns = await all('PRAGMA table_info(exercise_sets)');
+  if (!columns.some((column) => column.name === 'rest_after')) return;
+
+  const [{ count }] = await all('SELECT COUNT(*) AS count FROM exercise_sets');
+  if (Number(count) > 0) {
+    log(`exercise_sets has ${count} rows; leaving the unused rest_after column in place`);
+    return;
+  }
+  await run('ALTER TABLE exercise_sets DROP COLUMN rest_after');
+  log('dropped unused exercise_sets.rest_after (rest is derived from timestamps)');
+}
+
 export async function migrate({ log = () => {} } = {}) {
   const schema = readFileSync(schemaPath, 'utf8');
   await db.executeMultiple(schema);
   log(`schema applied (${dbTarget})`);
+  await dropLegacyRestAfter(log);
 
   // Seed only into a virgin database, so a category the user deleted on purpose
   // never comes back on the next deploy.
