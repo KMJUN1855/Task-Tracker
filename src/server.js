@@ -9,6 +9,7 @@ import tasksRouter from './routes/tasks.js';
 import sessionsRouter from './routes/sessions.js';
 import statsRouter from './routes/stats.js';
 import exerciseRouter from './routes/exercise.js';
+import aiRouter from './routes/ai.js';
 
 export function createApp() {
   const app = express();
@@ -32,6 +33,7 @@ export function createApp() {
   app.use('/api/sessions', sessionsRouter);
   app.use('/api/stats', statsRouter);
   app.use('/api/exercise', exerciseRouter);
+  app.use('/api/ai', aiRouter);
 
   app.use('/api', (req, res, next) => next(notFound(`No such endpoint: ${req.method} ${req.originalUrl}`)));
 

@@ -19,7 +19,13 @@ export const wrap = (handler) => (req, res, next) =>
 
 export function errorHandler(err, req, res, _next) {
   const status = err.status || 500;
-  if (status >= 500) console.error(err);
+  // A deliberate HttpError - an upstream refusing us, a rate limit - is not a
+  // crash, so it gets one line. Anything unexpected keeps its stack.
+  if (err instanceof HttpError) {
+    if (status >= 500) console.warn(`[${status}] ${req.method} ${req.originalUrl}: ${err.message}`);
+  } else if (status >= 500) {
+    console.error(err);
+  }
   res.status(status).json({
     error: err.message || 'Internal server error',
     ...(err.details ? { details: err.details } : {}),

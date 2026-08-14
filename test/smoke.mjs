@@ -13,6 +13,9 @@ const dbPath = join(tmpdir(), `task-tracker-smoke-${Date.now()}.db`);
 process.env.DATABASE_URL = `file:${dbPath}`;
 process.env.DATABASE_AUTH_TOKEN = '';
 process.env.PORT = '0';
+// Forced off: the suite must never call Gemini, spend quota, or depend on a key
+// being present in whatever environment it runs in.
+process.env.GEMINI_API_KEY = '';
 
 const { migrate } = await import('../src/migrate.js');
 const { createApp } = await import('../src/server.js');
@@ -480,6 +483,39 @@ check('finished workout appears in history', workoutHistory.data.some((w) => w.t
 await api('DELETE', `/api/exercise/workouts/${workoutId}`);
 const setsGone = await api('GET', `/api/exercise/workouts/${workoutId}`);
 check('deleting a workout removes it', setsGone.status === 404);
+
+/* ------------------------------------------------------------- ai bulk add */
+
+const aiOff = await api('GET', '/api/ai/status');
+check('ai status reports it is off without a key', aiOff.data.configured === false);
+
+const aiUnconfigured = await api('POST', '/api/ai/parse-tasks', { text: 'a\nb' });
+check(
+  'parse-tasks says so plainly instead of failing obscurely',
+  aiUnconfigured.status === 503 && /GEMINI_API_KEY/.test(aiUnconfigured.data.error),
+  `${aiUnconfigured.status} ${aiUnconfigured.data?.error}`,
+);
+
+// With a key present the request gets past the feature gate and hits input
+// validation, which throws before any network call - so this still contacts
+// nothing. The key is restored immediately after.
+process.env.GEMINI_API_KEY = 'smoke-test-key-never-sent';
+const aiOn = await api('GET', '/api/ai/status');
+check('ai status reflects a configured key', aiOn.data.configured === true);
+const aiEmpty = await api('POST', '/api/ai/parse-tasks', { text: '   ' });
+check(
+  'parse-tasks rejects empty text before calling out',
+  aiEmpty.status === 400,
+  `${aiEmpty.status} ${aiEmpty.data?.error}`,
+);
+process.env.GEMINI_API_KEY = '';
+
+// The whole point of the isolation: an unavailable AI must not touch anything.
+const stillWorking = await api('GET', '/api/tasks?status=upcoming');
+check('the rest of the API is unaffected by AI being off', stillWorking.status === 200);
+const madeByHand = await api('POST', '/api/tasks', { name: 'Created while AI is off' });
+check('tasks can still be created while AI is off', madeByHand.status === 201);
+await api('DELETE', `/api/tasks/${madeByHand.data.id}`);
 
 /* --------------------------------------------------------------- delete */
 

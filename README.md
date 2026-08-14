@@ -36,7 +36,7 @@ categories, and serves on <http://localhost:3000>.
 npm run smoke
 ```
 
-83 end-to-end checks against a throwaway database: full lifecycle, session
+89 end-to-end checks against a throwaway database: full lifecycle, session
 editing, overtime detection, calendar aggregation, sort reversibility, the
 exercise stopwatch flow, and the derived fields the browser depends on.
 
@@ -52,6 +52,7 @@ committed is exactly what runs. Mobile-first; the same layout widens on desktop.
 | `js/task-actions.js` | the action sets, so a task behaves the same on every page |
 | `js/task-forms.js` | new/edit, details, finish and delete dialogs |
 | `js/pie.js` | SVG pie chart + breakdown bars, hand-drawn, patterned |
+| `js/ai-bulk.js` | paste → AI suggestions → editable review → bulk create |
 | `js/exercise-sets.js` | the grouped set log, shared by the Exercise page and Details |
 | `js/alarm.js` | rest alarm: wake lock, Web Audio, vibration, notifications |
 | `js/format.js` | UTC → local rendering, `90m` / `1h30m` duration parsing |
@@ -133,6 +134,38 @@ breakdown bars below the pie stay a per-task chart and never list Untracked.
 The month's daily stats already carry each day's by-task and by-category split,
 so selecting a day costs one request, not two. Sessions that run past midnight
 are cut at local midnight by the API and counted against both days.
+
+## AI bulk add (optional)
+
+Paste a pile of notes — bullets, indentation, whatever — and Gemini splits them
+into tasks you then review before anything is created.
+
+**Setup.** Get a free key at <https://aistudio.google.com/apikey>, then set
+`GEMINI_API_KEY` in **both** places:
+
+* local: add it to `.env` (gitignored)
+* Render: dashboard → the service → Environment → add `GEMINI_API_KEY`, which
+  restarts the service
+
+Without a key the button simply does not appear and everything else is
+unaffected — `GET /api/ai/status` reports `configured: false` and the UI hides
+the feature rather than failing later.
+
+**How it behaves.** `POST /api/ai/parse-tasks` returns *suggestions only* and
+never writes to the database: name, one of your existing categories (or none),
+and a `YYYY-MM-DD` due date only when the text actually implies one. The browser
+turns that date into 23:59 local, shows an editable row per task with a tick box,
+and only then creates them through the ordinary `POST /api/tasks` — so they are
+identical to hand-made tasks.
+
+**When it fails.** A rate limit returns 429 with "wait a moment and try again",
+a bad key and an outage return a message naming the cause, and the pasted text
+stays in the box so you can retry. None of it touches the rest of the app; the
+suite asserts that tasks can still be created while AI is off.
+
+`GEMINI_MODEL` overrides the model (default `gemini-2.5-flash`). Model ids get
+retired, so on a 404 the server asks the API which models the key can actually
+use and retries once with a flash one.
 
 ## Installing it on a phone
 

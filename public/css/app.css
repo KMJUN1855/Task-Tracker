@@ -735,6 +735,53 @@ textarea { min-height: 7rem; resize: vertical; line-height: 1.5; }
 }
 .modal-actions .button { flex: 1; }
 
+/* ------------------------------------------------------- AI bulk preview */
+
+.ai-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-bottom: 0.8rem;
+}
+
+.ai-row {
+  padding: 0.6rem;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.ai-row-head { display: flex; align-items: center; gap: 0.55rem; }
+
+.ai-check {
+  flex: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--running);
+}
+
+.ai-name { flex: 1; min-width: 0; min-height: 2.4rem; }
+
+.ai-row-fields {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.45rem;
+}
+.ai-row-fields > * { flex: 1; min-width: 0; min-height: 2.4rem; }
+
+.ai-row-note {
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+/* An unticked row recedes without disappearing. */
+.ai-row:has(.ai-check:not(:checked)) { opacity: 0.45; }
+
+@media (max-width: 26rem) {
+  .ai-row-fields { flex-direction: column; }
+}
+
 .field-label {
   font-size: 0.8rem;
   color: var(--text-dim);

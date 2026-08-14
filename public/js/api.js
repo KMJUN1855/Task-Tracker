@@ -85,6 +85,12 @@ export const startSet = (id, typeName) =>
 
 export const listTypes = () => api.get('/api/exercise/types');
 export const getWorkout = (id) => api.get(`/api/exercise/workouts/${id}`);
+
+/* --------------------------------------------------------------------- ai */
+
+export const aiStatus = () => api.get('/api/ai/status');
+export const aiParseTasks = (text) =>
+  api.post('/api/ai/parse-tasks', { text, tz: localTimeZone() });
 export const stopSet = (id) => api.post(`/api/exercise/workouts/${id}/sets/stop`);
 export const finishWorkout = (id, note) =>
   api.post(`/api/exercise/workouts/${id}/finish`, { finish_note: note });
