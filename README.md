@@ -99,11 +99,20 @@ The pie has two independent switches:
 * **Grouping** — *By task* (golden-angle hues) or *By category* (the
   categories' fixed hues).
 
-The 24-hour denominator is the real length of that local day, so it is 23h or
-25h across a DST changeover rather than a flat 86400 — relevant in Canada,
-not in Korea. Tasks may run concurrently, so a day's tracked time can exceed
-the day itself; there is simply no Untracked slice then. The breakdown bars
-below the pie stay a per-task chart and never list Untracked.
+What the 24-hour circle measures against:
+
+* **A past day** — the real length of that local day, so 23h or 25h across a
+  DST changeover rather than a flat 86400. Relevant in Canada, not in Korea.
+* **Today** — midnight to now, so the untracked share describes the day so far
+  instead of counting hours that have not happened yet. It advances on any
+  re-render (navigating, refreshing, toggling a chip); the chart is deliberately
+  not redrawn every second.
+* **A future day** — the full day again.
+
+A caption under the pie states the figure, so the reading never depends on a
+tooltip a phone would not show. Tasks may run concurrently, so tracked time can
+exceed the window being measured; there is simply no Untracked slice then. The
+breakdown bars below the pie stay a per-task chart and never list Untracked.
 
 The month's daily stats already carry each day's by-task and by-category split,
 so selecting a day costs one request, not two. Sessions that run past midnight

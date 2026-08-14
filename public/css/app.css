@@ -529,6 +529,8 @@ textarea { min-height: 7rem; resize: vertical; line-height: 1.5; }
 
 /* ----------------------------------------------------------- breakdown */
 
+.pie-caption { text-align: center; margin: -0.4rem 0 0.9rem; }
+
 .breakdown { display: flex; flex-direction: column; gap: 0.55rem; margin-bottom: 0.5rem; }
 
 .breakdown-head {

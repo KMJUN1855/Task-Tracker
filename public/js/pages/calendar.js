@@ -56,15 +56,35 @@ const remember = (key, value) => {
 };
 
 /**
- * Length of a local calendar day in seconds. Normally 86400, but 23h or 25h on
- * a DST changeover - which Canada has and Korea does not, so this matters for
- * the move rather than being hypothetical.
+ * What the 24-hour pie measures against.
+ *
+ * For a finished day that is the whole local day: normally 86400, but 23h or
+ * 25h across a DST changeover - which Canada has and Korea does not, so it
+ * matters for the move rather than being hypothetical.
+ *
+ * For today it is midnight-to-now, so the untracked share describes the day so
+ * far instead of counting hours that have not happened yet. It advances
+ * whenever the page re-renders (navigation, refresh, toggling a chip); there is
+ * deliberately no per-second redraw of the chart.
+ *
+ * A day still in the future falls through to the full-day figure.
  */
-function dayLengthSeconds(dayKeyString) {
+function pieDenominatorSeconds(dayKeyString) {
   const [year, month, date] = dayKeyString.split('-').map(Number);
-  const start = new Date(year, month - 1, date);
-  const next = new Date(year, month - 1, date + 1);
+  const start = new Date(year, month - 1, date).getTime();
+  const next = new Date(year, month - 1, date + 1).getTime();
+  const now = Date.now();
+  if (now >= start && now < next) return Math.max(1, Math.round((now - start) / 1000));
   return Math.round((next - start) / 1000);
+}
+
+/** True when the given local day is the one in progress. */
+function isToday(dayKeyString) {
+  const [year, month, date] = dayKeyString.split('-').map(Number);
+  const start = new Date(year, month - 1, date).getTime();
+  const next = new Date(year, month - 1, date + 1).getTime();
+  const now = Date.now();
+  return now >= start && now < next;
 }
 
 /** A row of chips bound to a localStorage key. */
@@ -250,7 +270,13 @@ async function renderDayDetail(container, day) {
   container.append(
     chipRow(
       [
-        { value: '24h', label: '24-hour', title: 'The whole day, 00:00-24:00, including untracked time' },
+        {
+          value: '24h',
+          label: '24-hour',
+          title: isToday(selectedDay)
+            ? 'Midnight to now, including untracked time'
+            : 'The whole day, 00:00-24:00, including untracked time',
+        },
         { value: 'tracked', label: 'Tracked time', title: 'Only the time actually tracked on this day' },
       ],
       view,
@@ -291,11 +317,12 @@ async function renderDayDetail(container, day) {
         }));
 
   const slices = [...entries];
+  let denominator = null;
   if (view === '24h') {
     // Tasks may run concurrently, so tracked time can legitimately exceed the
-    // length of the day; there is simply no untracked remainder then.
-    const dayLength = dayLengthSeconds(selectedDay);
-    const untracked = dayLength - entries.reduce((sum, entry) => sum + entry.seconds, 0);
+    // window being measured; there is simply no untracked remainder then.
+    denominator = pieDenominatorSeconds(selectedDay);
+    const untracked = denominator - entries.reduce((sum, entry) => sum + entry.seconds, 0);
     if (untracked > 0) {
       slices.push({
         label: 'Untracked',
@@ -306,12 +333,31 @@ async function renderDayDetail(container, day) {
     }
   }
 
+  const live = view === '24h' && isToday(selectedDay);
   container.append(
     renderPie(slices, {
       title:
-        view === '24h' ? `Time on ${selectedDay}, whole day` : `Tracked time on ${selectedDay}`,
+        view === '24h'
+          ? `Time on ${selectedDay}, ${live ? 'midnight to now' : 'whole day'}`
+          : `Tracked time on ${selectedDay}`,
     }),
   );
+
+  // Say what the whole circle stands for, so the reading is unambiguous
+  // without needing a tooltip - which a phone would not show anyway.
+  if (denominator !== null) {
+    const caption = document.createElement('div');
+    caption.className = 'hint pie-caption';
+    // A whole day reads better as "24h" (or 23h/25h across a DST change) than
+    // as formatCompact's "1d".
+    const wholeHours = denominator / 3600;
+    caption.textContent = live
+      ? `Whole circle = ${formatCompact(denominator)} elapsed since midnight`
+      : `Whole circle = ${
+          Number.isInteger(wholeHours) ? `${wholeHours}h` : formatCompact(denominator)
+        }, the full day`;
+    container.append(caption);
+  }
 
   // The breakdown below stays a per-task chart, so it never lists "Untracked".
   if (entries.length > 0) container.append(renderBreakdown(entries));
