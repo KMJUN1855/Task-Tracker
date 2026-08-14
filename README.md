@@ -119,9 +119,10 @@ breakdown bars below the pie stay a per-task chart and never list Untracked.
 * **Exercise** — the stopwatch flow, separate from the standard task flow:
   Start Total → Start Set → Stop Set (rest begins) → Start Set → … → Finish
   Total. Total time sits above the current set/rest clock, which is the largest
-  thing on the page. Rest presets are 1 / 1.5 / 2 / 3 / 5 min, and the next set
-  never starts by itself — the alarm only says it is time. See the alarm section
-  below for what that alarm can and cannot do.
+  thing on the page. Rest presets are 1 / 1.5 / 2 / 3 / 5 min plus **No alarm**,
+  which keeps timing and recording the rest but counts up silently and never
+  fires. The next set never starts by itself — the alarm only says it is time.
+  See the alarm section below for what that alarm can and cannot do.
 
 The month's daily stats already carry each day's by-task and by-category split,
 so selecting a day costs one request, not two. Sessions that run past midnight

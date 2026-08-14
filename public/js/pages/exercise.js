@@ -31,14 +31,18 @@ import {
 
 export const title = 'Exercise';
 
+/** `0` means no alarm: the rest clock still runs, nothing ever fires. */
+const NO_ALARM = 0;
 const REST_PRESETS = [
   { seconds: 60, label: '1 min' },
   { seconds: 90, label: '1.5 min' },
   { seconds: 120, label: '2 min' },
   { seconds: 180, label: '3 min' },
   { seconds: 300, label: '5 min' },
+  { seconds: NO_ALARM, label: 'No alarm', title: 'Keep timing the rest, but never sound an alarm' },
 ];
 const REST_KEY = 'tt.exercise.rest';
+const DEFAULT_REST = 90;
 
 // Live view state. `workout` is the last server snapshot; every displayed
 // duration is recomputed from its timestamps on each tick.
@@ -50,10 +54,15 @@ let ctxRef = null;
 
 function loadRest() {
   try {
-    const stored = Number(localStorage.getItem(REST_KEY));
-    return REST_PRESETS.some((p) => p.seconds === stored) ? stored : 90;
+    const raw = localStorage.getItem(REST_KEY);
+    // Check for a missing key before converting: Number(null) and Number('')
+    // are both 0, which is now a real preset, so a bare Number() would turn
+    // "never chosen" into "No alarm".
+    if (raw === null || raw === '') return DEFAULT_REST;
+    const stored = Number(raw);
+    return REST_PRESETS.some((preset) => preset.seconds === stored) ? stored : DEFAULT_REST;
   } catch {
-    return 90;
+    return DEFAULT_REST;
   }
 }
 
@@ -247,6 +256,7 @@ function renderActive(history) {
   for (const preset of REST_PRESETS) {
     const chip = el('button', `chip${preset.seconds === restSeconds ? ' active' : ''}`, preset.label);
     chip.type = 'button';
+    if (preset.title) chip.title = preset.title;
     chip.setAttribute('aria-pressed', String(preset.seconds === restSeconds));
     chip.addEventListener('click', async () => {
       restSeconds = preset.seconds;
@@ -258,7 +268,9 @@ function renderActive(history) {
     presets.append(chip);
   }
   card.append(presets);
-  card.append(alarmStatusLine());
+  // Listing sound/vibration channels would be misleading when nothing will
+  // fire, so say that instead.
+  card.append(restSeconds === NO_ALARM ? noAlarmLine() : alarmStatusLine());
 
   root.append(card);
 
@@ -399,6 +411,14 @@ function historyList(history) {
   return list;
 }
 
+function noAlarmLine() {
+  return el(
+    'div',
+    'hint alarm-status',
+    'Alarm off. Rest is still timed and recorded - nothing will sound, so start the next set whenever you are ready.',
+  );
+}
+
 /** An honest one-liner about what the alarm can actually do on this device. */
 function alarmStatusLine() {
   const line = el('div', 'hint alarm-status');
@@ -449,28 +469,39 @@ export function tick() {
     restBar.hidden = true;
   } else if (resting) {
     const rested = seconds(resting.end_time);
-    const remaining = restSeconds - rested;
-    const over = remaining <= 0;
 
-    big.textContent = over ? `+${formatClock(-remaining)}` : formatClock(remaining);
-    big.className = `big-time ${over ? 'over' : 'resting'}`;
-    caption.textContent = over
-      ? `Rest over by ${formatCompact(-remaining)} - press Start Set when ready`
-      : `Resting after set ${resting.set_index}`;
+    if (restSeconds === NO_ALARM) {
+      // No target: the rest is still timed for the record, it simply counts up
+      // and nothing ever fires. No bar either - there is nothing to fill.
+      big.textContent = formatClock(rested);
+      big.className = 'big-time resting';
+      caption.textContent = `Resting after set ${resting.set_index} - no alarm, start when ready`;
+      restBar.hidden = true;
+    } else {
+      const remaining = restSeconds - rested;
+      const over = remaining <= 0;
 
-    restBar.hidden = false;
-    restFill.style.width = `${Math.min(100, (rested / restSeconds) * 100)}%`;
-    restFill.className = over ? 'over' : '';
+      big.textContent = over ? `+${formatClock(-remaining)}` : formatClock(remaining);
+      big.className = `big-time ${over ? 'over' : 'resting'}`;
+      caption.textContent = over
+        ? `Rest over by ${formatCompact(-remaining)} - press Start Set when ready`
+        : `Resting after set ${resting.set_index}`;
 
-    // Fire once per set. If the page was suspended past the deadline, this is
-    // reached on the first tick after it resumes - late, but never skipped.
-    if (over && alarmFiredForSetId !== resting.id) {
-      alarmFiredForSetId = resting.id;
-      const lateBy = -remaining;
-      fireAlarm({
-        title: 'Rest is over',
-        body: lateBy > 3 ? `Due ${formatCompact(lateBy)} ago - start your next set.` : 'Start your next set.',
-      });
+      restBar.hidden = false;
+      restFill.style.width = `${Math.min(100, (rested / restSeconds) * 100)}%`;
+      restFill.className = over ? 'over' : '';
+
+      // Fire once per set. If the page was suspended past the deadline, this is
+      // reached on the first tick after it resumes - late, but never skipped.
+      if (over && alarmFiredForSetId !== resting.id) {
+        alarmFiredForSetId = resting.id;
+        const lateBy = -remaining;
+        fireAlarm({
+          title: 'Rest is over',
+          body:
+            lateBy > 3 ? `Due ${formatCompact(lateBy)} ago - start your next set.` : 'Start your next set.',
+        });
+      }
     }
   } else {
     big.textContent = '--:--';
