@@ -99,19 +99,25 @@ button, input, select, textarea {
   display: flex;
   border-bottom: 1px solid var(--line);
   background: var(--bg);
+  /* Five tabs on a narrow phone: share the width when they fit, scroll when
+     they don't, rather than wrapping to a second row. */
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.tabs::-webkit-scrollbar { display: none; }
 
 .tabs a {
-  flex: 1;
+  flex: 1 0 auto;
   min-height: var(--tap);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.35rem;
-  padding: 0.6rem 0.4rem;
+  padding: 0.6rem 0.55rem;
   color: var(--text-dim);
   text-decoration: none;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
+  white-space: nowrap;
   border-bottom: 2px solid transparent;
 }
 
@@ -340,7 +346,209 @@ textarea { min-height: 7rem; resize: vertical; line-height: 1.5; }
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-dim);
+  font-weight: 700;
 }
+
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.section-head .section-title { flex: 1; margin-bottom: 0.5rem; }
+.section-head > :not(.section-title) { margin-bottom: 0.5rem; }
+
+.toolbar-note { font-size: 0.85rem; color: var(--text-dim); }
+
+/* --------------------------------------------------------------- chips */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.8rem;
+}
+
+.chip {
+  min-height: 2.2rem;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.chip.active {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--running);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------ calendar */
+
+.month-bar { align-items: center; }
+.month-label {
+  font-weight: 650;
+  min-width: 9rem;
+  text-align: center;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+  margin-bottom: 0.5rem;
+}
+
+.cal-head {
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  padding-bottom: 0.2rem;
+}
+
+.cal-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  min-height: 3.4rem;
+  padding: 0.25rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.cal-cell.empty-cell {
+  background: transparent;
+  border-color: transparent;
+  cursor: default;
+  min-height: 0;
+}
+.cal-cell.worked { color: var(--text); }
+.cal-cell.today { border-color: var(--text-dim); }
+.cal-cell.selected {
+  border-color: var(--running);
+  box-shadow: inset 0 0 0 1px var(--running);
+}
+
+.cal-date { font-size: 0.8rem; font-weight: 600; }
+.cal-cell.today .cal-date::after {
+  content: '•';
+  margin-left: 0.15rem;
+  color: var(--running);
+}
+
+.cal-meter {
+  display: block;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.cal-meter > i {
+  display: block;
+  height: 100%;
+  background: var(--running);
+}
+
+.cal-amount {
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ----------------------------------------------------------------- pie */
+
+.pie-figure { margin: 0 0 1rem; }
+
+.pie {
+  display: block;
+  width: min(15rem, 70vw);
+  height: auto;
+  margin: 0 auto 0.9rem;
+}
+
+.pie-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.pie-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+.pie-label { flex: 1; overflow-wrap: anywhere; }
+.pie-value { color: var(--text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.pie-swatch {
+  flex: none;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  position: relative;
+  overflow: hidden;
+}
+/* Legend swatches echo the slice patterns, so the two can be matched up
+   without relying on colour. */
+.pie-swatch::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.pie-swatch.pattern-1::after {
+  background: repeating-linear-gradient(45deg, rgba(0,0,0,.55) 0 2px, transparent 2px 4px);
+}
+.pie-swatch.pattern-2::after {
+  background: repeating-linear-gradient(-45deg, rgba(0,0,0,.55) 0 2px, transparent 2px 4px);
+}
+.pie-swatch.pattern-3::after {
+  background: radial-gradient(rgba(0,0,0,.5) 30%, transparent 32%);
+  background-size: 4px 4px;
+}
+.pie-swatch.pattern-4::after {
+  background: repeating-linear-gradient(90deg, rgba(0,0,0,.55) 0 2px, transparent 2px 4px);
+}
+.pie-swatch.pattern-5::after {
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,.55) 0 2px, transparent 2px 4px);
+}
+
+/* ----------------------------------------------------------- breakdown */
+
+.breakdown { display: flex; flex-direction: column; gap: 0.55rem; margin-bottom: 0.5rem; }
+
+.breakdown-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.2rem;
+}
+.breakdown-head b { font-variant-numeric: tabular-nums; }
+
+.breakdown-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.breakdown-bar > i { display: block; height: 100%; }
+
+.day-finished { display: flex; flex-direction: column; gap: 0.6rem; }
 
 /* ---------------------------------------------------------------- modal */
 

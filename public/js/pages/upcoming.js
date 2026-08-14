@@ -3,11 +3,11 @@
  * Sorted by due date with a reverse toggle; overdue items get the red treatment
  * and stay pinned to the top whatever the order.
  */
-import { listTasks, startTask } from '../api.js';
+import { listTasks } from '../api.js';
 import { renderList } from '../task-card.js';
 import { shadeByCategory } from '../color.js';
-import { toast } from '../modal.js';
-import { openTaskFormModal, openDeleteModal } from '../task-forms.js';
+import { upcomingActions } from '../task-actions.js';
+import { openTaskFormModal } from '../task-forms.js';
 import { loadSort, sortControls, primaryButton } from './controls.js';
 
 export const title = 'Upcoming';
@@ -38,38 +38,7 @@ export async function render(container, ctx) {
   renderList(
     list,
     tasks,
-    (task) => ({
-      color: colors.get(task.id),
-      actions: [
-        {
-          label: '▶ Start',
-          className: 'primary',
-          title: 'Start tracking - moves this task to Progress',
-          onClick: async (t, button) => {
-            button.disabled = true;
-            try {
-              await startTask(t.id);
-              toast('Started - moved to Progress');
-              await ctx.reload();
-            } catch (error) {
-              button.disabled = false;
-              toast(error.message, true);
-            }
-          },
-        },
-        {
-          label: 'Edit',
-          className: 'ghost',
-          onClick: (t) =>
-            openTaskFormModal({ task: t, categories: ctx.categories, onSaved: ctx.reload }),
-        },
-        {
-          label: 'Delete',
-          className: 'danger',
-          onClick: (t) => openDeleteModal({ task: t, onDeleted: ctx.reload }),
-        },
-      ],
-    }),
+    (task) => ({ color: colors.get(task.id), actions: upcomingActions(ctx) }),
     'Nothing upcoming. Add a task to get started.',
   );
 

@@ -3,11 +3,10 @@
  * reversible. Tasks that ran over max_time or past their due date keep the red
  * border and show the overage, exactly as on the Progress page.
  */
-import { listTasks, reopenTask } from '../api.js';
+import { listTasks } from '../api.js';
 import { renderList } from '../task-card.js';
 import { shadeByCategory } from '../color.js';
-import { toast } from '../modal.js';
-import { openDetailsModal, openDeleteModal } from '../task-forms.js';
+import { finishedActions } from '../task-actions.js';
 import { loadSort, sortControls } from './controls.js';
 
 export const title = 'Finished';
@@ -42,38 +41,7 @@ export async function render(container, ctx) {
   renderList(
     list,
     tasks,
-    (task) => ({
-      color: colors.get(task.id),
-      actions: [
-        {
-          label: 'Details',
-          className: 'ghost',
-          title: 'View the notes entered at finish time',
-          onClick: (t) => openDetailsModal({ task: t, onSaved: ctx.reload }),
-        },
-        {
-          label: '↩ Reopen',
-          className: 'ghost',
-          title: 'Undo the finish and move this task back to Progress',
-          onClick: async (t, button) => {
-            button.disabled = true;
-            try {
-              await reopenTask(t.id);
-              toast('Reopened - moved back to Progress');
-              await ctx.reload();
-            } catch (error) {
-              button.disabled = false;
-              toast(error.message, true);
-            }
-          },
-        },
-        {
-          label: 'Delete',
-          className: 'danger',
-          onClick: (t) => openDeleteModal({ task: t, onDeleted: ctx.reload }),
-        },
-      ],
-    }),
+    (task) => ({ color: colors.get(task.id), actions: finishedActions(ctx) }),
     'Nothing finished yet.',
   );
 

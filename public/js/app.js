@@ -2,12 +2,14 @@
 import { listCategories, listTasks } from './api.js';
 import { tickCards } from './task-card.js';
 import { closeModal } from './modal.js';
+import * as overview from './pages/overview.js';
 import * as upcoming from './pages/upcoming.js';
 import * as progress from './pages/progress.js';
 import * as finished from './pages/finished.js';
+import * as calendar from './pages/calendar.js';
 
-const PAGES = { upcoming, progress, finished };
-const DEFAULT_PAGE = 'upcoming';
+const PAGES = { overview, upcoming, progress, finished, calendar };
+const DEFAULT_PAGE = 'overview';
 
 const view = document.getElementById('view');
 const clock = document.getElementById('clock');
@@ -24,10 +26,22 @@ const currentPage = () => {
 };
 
 function markActiveTab(name) {
+  const tabs = document.querySelector('.tabs');
+  let active = null;
   for (const link of document.querySelectorAll('.tabs a')) {
     const isActive = link.dataset.tab === name;
-    if (isActive) link.setAttribute('aria-current', 'page');
-    else link.removeAttribute('aria-current');
+    if (isActive) {
+      link.setAttribute('aria-current', 'page');
+      active = link;
+    } else {
+      link.removeAttribute('aria-current');
+    }
+  }
+  // Five tabs overflow a phone's width, so centre the active one rather than
+  // leaving it off-screen. Set scrollLeft directly - scrollIntoView would drag
+  // the whole page around too.
+  if (active && tabs.scrollWidth > tabs.clientWidth) {
+    tabs.scrollLeft = active.offsetLeft - (tabs.clientWidth - active.offsetWidth) / 2;
   }
   document.title = `${PAGES[name].title} · Task Tracker`;
 }

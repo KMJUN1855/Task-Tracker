@@ -56,3 +56,14 @@ export const resumeTask = (id) => api.post(`/api/tasks/${id}/resume`);
 export const finishTask = (id, note) => api.post(`/api/tasks/${id}/finish`, { finish_note: note });
 export const reopenTask = (id) => api.post(`/api/tasks/${id}/reopen`);
 export const listCategories = () => api.get('/api/categories');
+
+/** The browser's own timezone - applied at read time, never stored. */
+export const localTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+export const statsDaily = (from, to) =>
+  api.get(
+    `/api/stats/daily?from=${from}&to=${to}&tz=${encodeURIComponent(localTimeZone())}`,
+  );
+
+export const statsDay = (day) =>
+  api.get(`/api/stats/day/${day}?tz=${encodeURIComponent(localTimeZone())}`);

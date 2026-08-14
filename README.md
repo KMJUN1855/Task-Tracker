@@ -1,8 +1,8 @@
 # Task Tracker
 
 Personal time/task tracking, reachable from both a computer and a phone browser.
-Steps 1 and 2 of the implementation order are done: **server + DB schema + API**,
-and the **Upcoming / Progress / Finished** pages.
+Steps 1-3 of the implementation order are done: **server + DB schema + API**, the
+**Upcoming / Progress / Finished** pages, and **Overview + Calendar + pie chart**.
 
 * **Runtime** — Node.js 20+, Express, `@libsql/client`
 * **Database** — SQLite dialect. The same schema and queries run on Turso
@@ -48,10 +48,12 @@ committed is exactly what runs. Mobile-first; the same layout widens on desktop.
 | --- | --- |
 | `js/app.js` | hash router, one-second tick, tab badges |
 | `js/task-card.js` | the shared card - live time, state colours, status pill |
+| `js/task-actions.js` | the action sets, so a task behaves the same on every page |
 | `js/task-forms.js` | new/edit, details, finish and delete dialogs |
+| `js/pie.js` | SVG pie chart + breakdown bars, hand-drawn, patterned |
 | `js/format.js` | UTC → local rendering, `90m` / `1h30m` duration parsing |
 | `js/color.js` | category hue + per-task lightness; golden-angle task hues |
-| `js/pages/*.js` | Upcoming, Progress, Finished |
+| `js/pages/*.js` | Overview, Upcoming, Progress, Finished, Calendar |
 
 **The card recomputes, it never accumulates.** It keeps `closed_seconds` and
 `open_session_start` from the API and derives elapsed time on every tick, so a
@@ -62,6 +64,8 @@ crossed `max_time` and should turn red.
 **Colour is never the only signal.** Every state colour is paired with an icon
 and a word: ▶ Running (yellow), ⏸ Paused (blue), ⚠ Overtime (red, past
 max_time), ⚠ Overdue (red, past the due date only), ○ Upcoming, ✓ Finished.
+Pie slices additionally carry a repeating fill pattern, echoed in the legend
+swatches, and the chart exposes the whole breakdown as text via `aria-label`.
 Category identity is separate from state: a dot carries the category's fixed
 hue, with lightness varying per task inside that category, and the category name
 is spelled out next to it.
@@ -76,6 +80,20 @@ is spelled out next to it.
 * **Finished** — five sort options, each reversible: finished date, due date,
   start date, overtime by max time, overtime by due date. Overruns keep the red
   border and the overage figure. Details, Reopen, Delete.
+* **Overview** — in progress on top, upcoming in the middle (filtered to this
+  week / this month / all), finished at the bottom. Each section imports the
+  actions of its dedicated page from `task-actions.js`, so Start here moves the
+  task into the Progress section above and out of Upcoming, exactly as it does
+  there.
+* **Calendar** — a month grid where each day shows a meter and the hours
+  tracked; picking a day gives the pie chart first, then the per-task
+  breakdown bars, then what was finished that day and how far before or after
+  its due date that landed. The pie toggles between by-task (golden-angle hues)
+  and by-category (the categories' fixed hues).
+
+The month's daily stats already carry each day's by-task and by-category split,
+so selecting a day costs one request, not two. Sessions that run past midnight
+are cut at local midnight by the API and counted against both days.
 
 ## Deploy — Phase A
 
@@ -200,10 +218,9 @@ days so the calendar grid needs no gap filling.
 | Progress | `GET /api/tasks?status=in_progress,paused` |
 | Finished | `GET /api/tasks?status=finished&sort=overtime_max&order=desc` |
 | Overview | the three calls above, `?due_before=` for the week/month filter |
-| Calendar | `GET /api/stats/daily?from=&to=&tz=` then `GET /api/stats/day/:day?tz=` |
+| Calendar | `GET /api/stats/daily?from=&to=&tz=` per month, then `GET /api/stats/day/:day?tz=` per selected day |
 
 ## Next steps
 
-3. Overview + Calendar + pie chart
 4. Exercise page (stopwatch; `exercise_sets` table and its endpoints)
 5. Phase B — local server or Raspberry Pi + Tailscale, verify phone access
