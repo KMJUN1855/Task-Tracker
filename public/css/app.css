@@ -344,14 +344,21 @@ textarea { min-height: 7rem; resize: vertical; line-height: 1.5; }
 
 /* ---------------------------------------------------------------- modal */
 
+/* :not([hidden]) matters. An author `display` declaration beats the UA
+   stylesheet's `[hidden] { display: none }`, so a plain `.modal-backdrop
+   { display: flex }` would keep the closed backdrop laid out over the whole
+   viewport, invisible against the dark page but swallowing every click. */
+.modal-backdrop:not([hidden]) {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
   z-index: 50;
   background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
   padding: 0;
 }
 
@@ -427,7 +434,9 @@ textarea { min-height: 7rem; resize: vertical; line-height: 1.5; }
 /* ------------------------------------------------------------- desktop */
 
 @media (min-width: 40rem) {
-  .modal-backdrop { align-items: center; padding: 1rem; }
+  /* Same :not([hidden]) specificity as the base rule, or flex-end would win. */
+  .modal-backdrop:not([hidden]) { align-items: center; }
+  .modal-backdrop { padding: 1rem; }
   .modal { border-radius: var(--radius); }
   .actions .button { flex: 0 0 auto; }
   .view { padding-top: 1.2rem; }
