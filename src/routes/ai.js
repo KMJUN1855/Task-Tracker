@@ -128,20 +128,39 @@ const RESPONSE_SCHEMA = {
   },
 };
 
-async function generate(key, model, prompt) {
+/**
+ * The current flash models reason internally before answering, and those
+ * "thought" tokens dominate the bill: a measured call on a short note spent 351
+ * thought tokens against 65 tokens of actual answer - 71% of the request. On the
+ * free tier, whose limits are per-minute tokens, that is what makes a normal
+ * paste return 429. Splitting a bullet list does not need deliberation, so it is
+ * switched off.
+ *
+ * Not every model accepts a zero budget, so this degrades: if the API rejects
+ * the field the request is repeated without it and the process stops sending it.
+ */
+let thinkingSupported = true;
+
+async function generate(key, model, prompt, { noThinking = false } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  const generationConfig = {
+    temperature: 0.2,
+    responseMimeType: 'application/json',
+    responseSchema: RESPONSE_SCHEMA,
+  };
+  if (thinkingSupported && !noThinking) {
+    generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  }
+
   try {
     return await fetch(`${API_ROOT}/models/${model}:generateContent`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.2,
-          responseMimeType: 'application/json',
-          responseSchema: RESPONSE_SCHEMA,
-        },
+        generationConfig,
       }),
       signal: controller.signal,
     });
@@ -221,6 +240,18 @@ async function generateWithRetry(key, model, prompt) {
           ? 'Gemini took too long to answer. Please try again.'
           : 'Could not reach Gemini. Check the connection and try again.',
       );
+    }
+
+    // A model that will not take thinkingBudget: 0 says so with a 400. Drop the
+    // field permanently and repeat, rather than losing the feature over it.
+    if (res.status === 400 && thinkingSupported) {
+      const body = await res.text().catch(() => '');
+      if (/thinking/i.test(body)) {
+        thinkingSupported = false;
+        console.warn(`[ai] ${model} rejected thinkingBudget:0; continuing without it`);
+        return generate(key, model, prompt, { noThinking: true });
+      }
+      return new Response(body, { status: 400, headers: res.headers });
     }
 
     if (res.status < 500) return res;

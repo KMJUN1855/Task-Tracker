@@ -171,8 +171,17 @@ timeout each name their cause, and the pasted text stays in the box for a retry.
 None of it touches the rest of the app; the suite asserts that tasks can still
 be created while AI is off.
 
-Free-tier quota is small — a handful of bulk parses in quick succession will
-exhaust it, and it comes back on its own.
+**Free-tier quota is the real constraint, and thinking tokens were eating it.**
+The current flash models reason internally before answering, and those thoughts
+are billed: a measured call on a short note spent **351 thought tokens against
+65 tokens of answer** — 71% of the request. The free tier limits tokens per
+minute, so a normal ten-item paste could 429 seconds after a small call
+succeeded. Splitting a bullet list needs no deliberation, so `thinkingBudget: 0`
+is now sent; if a model refuses the field the request is repeated without it.
+
+The limit is per minute and recovers on its own. If it still bites, either wait
+a minute, paste fewer items, or set `GEMINI_MODEL=gemini-flash-lite-latest`,
+which is cheaper per call and enough for this extraction task.
 
 `GEMINI_MODEL` overrides the model. The default is the **`gemini-flash-latest`
 alias**, not a pinned version, because Google retires numbered ones —
