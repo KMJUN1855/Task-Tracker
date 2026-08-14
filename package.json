@@ -1,0 +1,22 @@
+{
+  "name": "task-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal time/task tracking app - API server (Phase A: Turso + Render)",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "migrate": "node src/migrate.js",
+    "smoke": "node test/smoke.mjs"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.15.4",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
+  }
+}

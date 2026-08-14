@@ -1,0 +1,18 @@
+# Render blueprint (free tier). The service sleeps after ~15 min idle and takes
+# a few seconds to wake - acceptable for a personal app.
+services:
+  - type: web
+    name: task-tracker
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Set both in the Render dashboard (marked secret, not committed).
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_AUTH_TOKEN
+        sync: false

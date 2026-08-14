@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Task Tracker</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 0;
+        padding: 2rem 1.25rem;
+        background: #14161a;
+        color: #e7e9ee;
+      }
+      main { max-width: 34rem; margin: 0 auto; }
+      code { background: #22252c; padding: 0.1em 0.4em; border-radius: 4px; }
+      li { margin: 0.35rem 0; }
+      #status { font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Task Tracker</h1>
+      <p>API is up — the UI lands in step 2.</p>
+      <p>Server status: <span id="status">checking…</span></p>
+      <ul>
+        <li><code>GET /api/health</code></li>
+        <li><code>GET /api/categories</code></li>
+        <li><code>GET /api/tasks?status=upcoming&amp;sort=due_date&amp;pin_overdue=1</code></li>
+        <li><code>GET /api/sessions?task_id=1</code></li>
+        <li><code>GET /api/stats/daily?from=2026-08-01&amp;to=2026-08-14&amp;tz=Asia/Seoul</code></li>
+      </ul>
+    </main>
+    <script>
+      fetch('/api/health')
+        .then((r) => r.json())
+        .then((d) => {
+          document.getElementById('status').textContent = `ok — db: ${d.db}`;
+        })
+        .catch(() => {
+          document.getElementById('status').textContent = 'unreachable';
+        });
+    </script>
+  </body>
+</html>
