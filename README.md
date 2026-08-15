@@ -137,14 +137,15 @@ are cut at local midnight by the API and counted against both days.
 
 ## AI bulk add (optional)
 
-Paste a pile of notes — bullets, indentation, whatever — and Gemini splits them
-into tasks you then review before anything is created.
+Paste a pile of notes — bullets, indentation, whatever — and the model splits
+them into tasks you then review before anything is created. Runs on **Groq**
+(OpenAI-compatible chat completions), default model `llama-3.3-70b-versatile`.
 
-**Setup.** Get a free key at <https://aistudio.google.com/apikey>, then set
-`GEMINI_API_KEY` in **both** places:
+**Setup.** Get a free key at <https://console.groq.com/keys>, then set
+`GROQ_API_KEY` in **both** places:
 
 * local: add it to `.env` (gitignored)
-* Render: dashboard → the service → Environment → add `GEMINI_API_KEY`, which
+* Render: dashboard → the service → Environment → add `GROQ_API_KEY`, which
   restarts the service
 
 Without a key the button simply does not appear and everything else is
@@ -158,37 +159,24 @@ turns that date into 23:59 local, shows an editable row per task with a tick box
 and only then creates them through the ordinary `POST /api/tasks` — so they are
 identical to hand-made tasks.
 
-**When it fails.** Gemini returns a transient `503 "This model is currently
-experiencing high demand"` often enough to matter — roughly one call in three
-during testing, on a request that succeeded unchanged seconds later. So a 5xx or
-a dropped connection is **retried automatically** (3 attempts, backing off)
-before the user ever hears about it, and the upstream detail goes to the server
-log so a real outage is still diagnosable.
+**Why Groq and not Gemini.** This ran on Gemini first and kept returning 429 on
+a normal ten-item paste. The cause was measurable: the current flash models
+reason internally before answering and bill those thoughts — one call spent
+**351 thought tokens against 65 tokens of answer**, 71% of the request — against
+a free tier that limits tokens per minute. Groq answers the same paste in
+**~0.8s with no thinking overhead**, and five consecutive runs all succeeded.
 
-`429` is deliberately *not* retried: that is the free-tier quota, and hammering
-it makes it worse. It returns "wait a moment and try again". A bad key and a
-timeout each name their cause, and the pasted text stays in the box for a retry.
-None of it touches the rest of the app; the suite asserts that tasks can still
-be created while AI is off.
+**When it fails.** A 5xx or a dropped connection is retried automatically (3
+attempts, backing off) before the user hears about it, with the upstream detail
+logged server-side so a real outage stays diagnosable. `429` is deliberately
+*not* retried — that is a rate limit, and hammering it makes it worse — so it
+returns "wait a moment and try again". A bad key and a timeout each name their
+cause, and the pasted text stays in the box for a retry. None of it touches the
+rest of the app; the suite asserts tasks can still be created while AI is off.
 
-**Free-tier quota is the real constraint, and thinking tokens were eating it.**
-The current flash models reason internally before answering, and those thoughts
-are billed: a measured call on a short note spent **351 thought tokens against
-65 tokens of answer** — 71% of the request. The free tier limits tokens per
-minute, so a normal ten-item paste could 429 seconds after a small call
-succeeded. Splitting a bullet list needs no deliberation, so `thinkingBudget: 0`
-is now sent; if a model refuses the field the request is repeated without it.
-
-The limit is per minute and recovers on its own. If it still bites, either wait
-a minute, paste fewer items, or set `GEMINI_MODEL=gemini-flash-lite-latest`,
-which is cheaper per call and enough for this extraction task.
-
-`GEMINI_MODEL` overrides the model. The default is the **`gemini-flash-latest`
-alias**, not a pinned version, because Google retires numbered ones —
-`gemini-2.5-flash` is already refused for new keys ("no longer available to new
-users") while `ListModels` still cheerfully advertises it. On a 404 the server
-asks which models the key can use and retries, skipping the one that just
-failed, ignoring image/tts/robotics/research models, and preferring aliases.
+`GROQ_MODEL` overrides the model. If the configured id is retired, the server
+asks which models the key can use and retries with one that can chat, skipping
+speech and classifier models.
 
 ## Installing it on a phone
 

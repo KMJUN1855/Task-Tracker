@@ -3,11 +3,12 @@ import { all } from '../db.js';
 import { wrap, badRequest, HttpError, requireString, parseTimeZone } from '../http.js';
 
 /**
- * Bulk task entry via Gemini.
+ * Bulk task entry via Groq (OpenAI-compatible chat completions).
  *
  * This router is deliberately self-contained and fails soft: no API key, a rate
- * limit, or Google being down affects only these two endpoints. Nothing else in
- * the app calls it, and the UI hides the button when /status says it is off.
+ * limit, or the provider being down affects only these two endpoints. Nothing
+ * else in the app calls it, and the UI hides the button when /status says it is
+ * off.
  *
  * It never writes to the database - it returns suggestions, and the browser
  * creates tasks through the ordinary POST /api/tasks after the user has
@@ -15,32 +16,28 @@ import { wrap, badRequest, HttpError, requireString, parseTimeZone } from '../ht
  */
 const router = Router();
 
-const API_ROOT = 'https://generativelanguage.googleapis.com/v1beta';
-/**
- * An alias rather than a pinned version: Google retires numbered models (2.5-flash
- * is already refused for new keys even though ListModels still advertises it),
- * and the alias always points at the current flash.
- */
-const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-latest';
+const API_ROOT = 'https://api.groq.com/openai/v1';
+const DEFAULT_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 const MAX_INPUT_CHARS = 8000;
 const MAX_ITEMS = 50;
 const TIMEOUT_MS = 30000;
 const TRANSIENT_RETRIES = 2;
 const RETRY_DELAY_MS = 700;
 
-const apiKey = () => process.env.GEMINI_API_KEY?.trim() || null;
+const apiKey = () => process.env.GROQ_API_KEY?.trim() || null;
 
-/** Model ids change over time; remember whichever one worked. */
+/** Model ids come and go; remember whichever one worked. */
 let resolvedModel = null;
 
 /**
  * GET /api/ai/status - lets the UI hide the feature instead of failing later.
  * `retries` also makes it possible to tell which build is live without spending
- * a Gemini call, which matters because the free-tier quota is small.
+ * an API call.
  */
 router.get('/status', (req, res) => {
   res.json({
     configured: Boolean(apiKey()),
+    provider: 'groq',
     model: resolvedModel ?? DEFAULT_MODEL,
     retries: TRANSIENT_RETRIES,
   });
@@ -59,7 +56,7 @@ router.post(
     if (!key) {
       throw new HttpError(
         503,
-        'AI bulk add is not configured. Set GEMINI_API_KEY on the server to enable it.',
+        'AI bulk add is not configured. Set GROQ_API_KEY on the server to enable it.',
       );
     }
 
@@ -76,7 +73,7 @@ router.post(
       day: '2-digit',
     }).format(new Date());
 
-    const raw = await callGemini(key, buildPrompt(text, categories, today, timeZone));
+    const raw = await callGroq(key, buildPrompt(text, categories, today, timeZone));
     const items = normalise(raw, categories);
     if (items.length === 0) {
       throw badRequest('The AI could not find any tasks in that text. Try adding more detail.');
@@ -99,13 +96,18 @@ Rules:
 - The text may be a hierarchy of bullets or indented lines. Turn the actionable
   leaf items into separate tasks. A parent line that is only a heading or
   grouping is NOT a task by itself; a parent line with no children IS.
-- When a child item's name would be ambiguous alone, prefix it with its parent,
-  e.g. "PHYS 381 - problem set 4".
+- Use the leaf item's own wording as the name. Do NOT prefix it with its parent
+  heading - the heading is usually just a grouping and the category already
+  records it. Only add context when the item alone would be meaningless, e.g.
+  a bare "chapter 7" under "PHYS 381" becomes "PHYS 381 - read chapter 7".
 - Keep each name short and imperative-ish; do not invent work that is not there.
 - due_date: only when the text actually implies a date. Resolve relative hints
   ("tomorrow", "next Friday", "by the 20th") against today's date and return
   YYYY-MM-DD. If there is no date hint at all, return null. Never guess.
 - Return at most ${MAX_ITEMS} tasks.
+
+Return json in exactly this shape:
+{"tasks": [{"name": "string", "category": "string or null", "due_date": "YYYY-MM-DD or null"}]}
 
 Text to split:
 """
@@ -113,54 +115,22 @@ ${text}
 """`;
 }
 
-/* ------------------------------------------------------------------- Gemini */
+/* --------------------------------------------------------------------- api */
 
-const RESPONSE_SCHEMA = {
-  type: 'ARRAY',
-  items: {
-    type: 'OBJECT',
-    properties: {
-      name: { type: 'STRING' },
-      category: { type: 'STRING', nullable: true },
-      due_date: { type: 'STRING', nullable: true },
-    },
-    required: ['name'],
-  },
-};
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * The current flash models reason internally before answering, and those
- * "thought" tokens dominate the bill: a measured call on a short note spent 351
- * thought tokens against 65 tokens of actual answer - 71% of the request. On the
- * free tier, whose limits are per-minute tokens, that is what makes a normal
- * paste return 429. Splitting a bullet list does not need deliberation, so it is
- * switched off.
- *
- * Not every model accepts a zero budget, so this degrades: if the API rejects
- * the field the request is repeated without it and the process stops sending it.
- */
-let thinkingSupported = true;
-
-async function generate(key, model, prompt, { noThinking = false } = {}) {
+async function generate(key, model, prompt) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-  const generationConfig = {
-    temperature: 0.2,
-    responseMimeType: 'application/json',
-    responseSchema: RESPONSE_SCHEMA,
-  };
-  if (thinkingSupported && !noThinking) {
-    generationConfig.thinkingConfig = { thinkingBudget: 0 };
-  }
-
   try {
-    return await fetch(`${API_ROOT}/models/${model}:generateContent`, {
+    return await fetch(`${API_ROOT}/chat/completions`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
       body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig,
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.2,
+        response_format: { type: 'json_object' },
       }),
       signal: controller.signal,
     });
@@ -169,53 +139,34 @@ async function generate(key, model, prompt, { noThinking = false } = {}) {
   }
 }
 
-/**
- * Models that exist but cannot do what we want: images, audio, robotics, and
- * the long-running research ones. ListModels advertises all of them.
- */
-const NOT_TEXT_CHAT =
-  /image|tts|audio|robotics|lyria|veo|imagen|embedding|computer-use|nano-banana|deep-research|omni/;
+/** Models that exist on Groq but cannot do chat: speech, TTS, safety classifiers. */
+const NOT_CHAT = /whisper|orpheus|prompt-guard|safeguard|tts|distil/;
 
-/**
- * A 404 is not fatal: ask which models this key can actually use and retry.
- * Note that ListModels lies by omission - it still lists models that
- * generateContent refuses ("no longer available to new users") - so the model
- * that just failed is excluded, and aliases are preferred over pinned versions
- * because they keep working as versions are retired.
- */
+/** Ask which models this key can use, skipping the one that just failed. */
 async function discoverModel(key, failedModel) {
-  const res = await fetch(`${API_ROOT}/models`, { headers: { 'x-goog-api-key': key } });
+  const res = await fetch(`${API_ROOT}/models`, { headers: { authorization: `Bearer ${key}` } });
   if (!res.ok) return null;
   const body = await res.json();
 
-  const name = (m) => String(m.name).replace(/^models\//, '');
-  const usable = (body.models ?? [])
-    .filter((m) => (m.supportedGenerationMethods ?? []).includes('generateContent'))
-    .map(name)
-    .filter((n) => n !== failedModel && !NOT_TEXT_CHAT.test(n));
+  const usable = (body.data ?? [])
+    .filter((m) => m.active !== false && Number(m.context_window ?? 0) >= 8192)
+    .map((m) => String(m.id))
+    .filter((id) => id !== failedModel && !NOT_CHAT.test(id));
 
   return (
-    usable.find((n) => n === 'gemini-flash-latest') ??
-    usable.find((n) => /flash.*-latest$/.test(n)) ??
-    usable.find((n) => /-latest$/.test(n)) ??
-    usable.find((n) => /flash/.test(n) && !/preview/.test(n)) ??
-    usable.find((n) => /flash/.test(n)) ??
+    usable.find((id) => /llama-3\.3-70b/.test(id)) ??
+    usable.find((id) => /gpt-oss-120b/.test(id)) ??
+    usable.find((id) => /llama.*versatile/.test(id)) ??
+    usable.find((id) => /instant/.test(id)) ??
     usable[0] ??
     null
   );
 }
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 /**
- * Gemini returns a transient 5xx often enough to matter - roughly one call in
- * three during testing, on a request that succeeds unchanged moments later. So
- * a 5xx or a dropped connection is retried here rather than handed to the user
- * as "try again"; only a definitive answer (2xx, or a 4xx we should act on)
- * leaves this function.
- *
- * 429 is deliberately NOT retried: that is a quota limit, and hammering it
- * makes it worse. It goes straight back as "wait a moment".
+ * A 5xx or a dropped connection is retried here rather than handed to the user
+ * as "try again". 429 is deliberately NOT retried: that is a rate limit, and
+ * hammering it makes it worse.
  */
 async function generateWithRetry(key, model, prompt) {
   let lastRes = null;
@@ -227,9 +178,7 @@ async function generateWithRetry(key, model, prompt) {
       res = await generate(key, model, prompt);
     } catch (error) {
       const timedOut = error?.name === 'AbortError';
-      console.warn(
-        `[ai] ${timedOut ? 'timeout' : 'network error'} on ${model} (attempt ${attempt + 1})`,
-      );
+      console.warn(`[ai] ${timedOut ? 'timeout' : 'network error'} on ${model} (attempt ${attempt + 1})`);
       if (attempt < TRANSIENT_RETRIES) {
         await sleep(RETRY_DELAY_MS * (attempt + 1));
         continue;
@@ -237,21 +186,9 @@ async function generateWithRetry(key, model, prompt) {
       throw new HttpError(
         502,
         timedOut
-          ? 'Gemini took too long to answer. Please try again.'
-          : 'Could not reach Gemini. Check the connection and try again.',
+          ? 'Groq took too long to answer. Please try again.'
+          : 'Could not reach Groq. Check the connection and try again.',
       );
-    }
-
-    // A model that will not take thinkingBudget: 0 says so with a 400. Drop the
-    // field permanently and repeat, rather than losing the feature over it.
-    if (res.status === 400 && thinkingSupported) {
-      const body = await res.text().catch(() => '');
-      if (/thinking/i.test(body)) {
-        thinkingSupported = false;
-        console.warn(`[ai] ${model} rejected thinkingBudget:0; continuing without it`);
-        return generate(key, model, prompt, { noThinking: true });
-      }
-      return new Response(body, { status: 400, headers: res.headers });
     }
 
     if (res.status < 500) return res;
@@ -259,24 +196,31 @@ async function generateWithRetry(key, model, prompt) {
     lastRes = res;
     lastBody = await res.text().catch(() => '');
     // Keep the upstream detail in the server log; the user gets the short line.
-    console.warn(
-      `[ai] Gemini ${res.status} on ${model} (attempt ${attempt + 1}): ${lastBody.slice(0, 200)}`,
-    );
+    console.warn(`[ai] Groq ${res.status} on ${model} (attempt ${attempt + 1}): ${lastBody.slice(0, 200)}`);
     if (attempt < TRANSIENT_RETRIES) await sleep(RETRY_DELAY_MS * (attempt + 1));
   }
 
   throw upstreamError(lastRes, lastBody);
 }
 
-async function callGemini(key, prompt) {
+async function callGroq(key, prompt) {
   let model = resolvedModel ?? DEFAULT_MODEL;
   let res = await generateWithRetry(key, model, prompt);
 
-  if (res.status === 404) {
-    const discovered = await discoverModel(key, model);
-    if (discovered) {
-      model = discovered;
-      res = await generateWithRetry(key, model, prompt);
+  // An unknown or retired model id comes back as 404, or 400 "model_not_found".
+  if (res.status === 404 || res.status === 400) {
+    const body = await res.text().catch(() => '');
+    if (/model/i.test(body) && /not.?found|decommission|does not exist/i.test(body)) {
+      const discovered = await discoverModel(key, model);
+      if (discovered) {
+        console.warn(`[ai] ${model} unavailable; falling back to ${discovered}`);
+        model = discovered;
+        res = await generateWithRetry(key, model, prompt);
+      } else {
+        throw upstreamError(res, body);
+      }
+    } else {
+      throw upstreamError(res, body);
     }
   }
 
@@ -284,17 +228,13 @@ async function callGemini(key, prompt) {
   resolvedModel = model;
 
   const body = await res.json();
-  const blocked = body.promptFeedback?.blockReason;
-  if (blocked) throw badRequest(`Gemini refused that text (${blocked}).`);
-
-  const parts = body.candidates?.[0]?.content?.parts ?? [];
-  const json = parts.map((part) => part.text ?? '').join('').trim();
-  if (!json) throw new HttpError(502, 'Gemini returned an empty response. Try again.');
+  const content = body.choices?.[0]?.message?.content?.trim();
+  if (!content) throw new HttpError(502, 'Groq returned an empty response. Try again.');
 
   try {
-    return JSON.parse(json);
+    return JSON.parse(content);
   } catch {
-    throw new HttpError(502, 'Gemini returned something that was not valid JSON. Try again.');
+    throw new HttpError(502, 'Groq returned something that was not valid JSON. Try again.');
   }
 }
 
@@ -304,31 +244,31 @@ function upstreamError(res, bodyText) {
   try {
     detail = JSON.parse(bodyText)?.error?.message ?? '';
   } catch {
-    detail = bodyText.slice(0, 200);
+    detail = String(bodyText).slice(0, 200);
   }
 
-  if (res.status === 429) {
+  if (res?.status === 429) {
     return new HttpError(
       429,
-      'Gemini free-tier limit reached. Please wait a moment and try again - everything else in the app still works.',
+      'Groq rate limit reached. Please wait a moment and try again - everything else in the app still works.',
     );
   }
-  if (res.status === 401 || res.status === 403) {
-    return new HttpError(502, `Gemini rejected the API key. Check GEMINI_API_KEY. ${detail}`.trim());
+  if (res?.status === 401 || res?.status === 403) {
+    return new HttpError(502, `Groq rejected the API key. Check GROQ_API_KEY. ${detail}`.trim());
   }
-  if (res.status === 404) {
+  if (res?.status === 404 || res?.status === 400) {
     return new HttpError(
       502,
-      `No usable Gemini model found for this key. Set GEMINI_MODEL to one your key supports. ${detail}`.trim(),
+      `Groq could not use model "${resolvedModel ?? DEFAULT_MODEL}". Set GROQ_MODEL to one your key supports. ${detail}`.trim(),
     );
   }
-  if (res.status >= 500) {
+  if (!res || res.status >= 500) {
     return new HttpError(
       502,
-      `Gemini is having trouble right now - already retried ${TRANSIENT_RETRIES + 1} times. Please try again shortly.`,
+      `Groq is having trouble right now - already retried ${TRANSIENT_RETRIES + 1} times. Please try again shortly.`,
     );
   }
-  return new HttpError(502, `Gemini request failed (${res.status}). ${detail}`.trim());
+  return new HttpError(502, `Groq request failed (${res.status}). ${detail}`.trim());
 }
 
 /* --------------------------------------------------------------- normalise */
@@ -337,7 +277,13 @@ const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Never trust the model's shape: clamp, trim and map onto real category ids. */
 function normalise(raw, categories) {
-  const list = Array.isArray(raw) ? raw : Array.isArray(raw?.tasks) ? raw.tasks : [];
+  const list = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.tasks)
+      ? raw.tasks
+      : Array.isArray(raw?.items)
+        ? raw.items
+        : [];
   const byName = new Map(categories.map((c) => [c.name.toLowerCase(), c]));
 
   return list
